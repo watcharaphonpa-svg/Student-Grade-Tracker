@@ -1,0 +1,5 @@
+{
+  "name": "Student Grade Tracker",
+  "description": "A comprehensive tool for teachers to track student scores, calculate grades, and manage assignments with sub-score integration.",
+  "requestFramePermissions": []
+}

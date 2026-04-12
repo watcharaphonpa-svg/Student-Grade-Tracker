@@ -1,0 +1,223 @@
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import path from "path";
+import { fileURLToPath } from "url";
+import { google } from "googleapis";
+import cookieParser from "cookie-parser";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+app.use(cookieParser());
+
+const oauth2Client = new google.auth.OAuth2(
+  (process.env.GOOGLE_CLIENT_ID || "").trim(),
+  (process.env.GOOGLE_CLIENT_SECRET || "").trim(),
+  (process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_URL}/auth/google/callback`).trim()
+);
+
+const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
+
+// --- OAuth Routes ---
+
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
+
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", env: { 
+    hasClientId: !!process.env.GOOGLE_CLIENT_ID,
+    hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || "using-default"
+  }});
+});
+
+app.get("/api/auth/google/url", (req, res) => {
+  try {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return res.status(500).json({ 
+        error: "Missing Google OAuth credentials in Secrets",
+        details: "Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set in AI Studio Secrets."
+      });
+    }
+
+    const url = oauth2Client.generateAuthUrl({
+      access_type: "offline",
+      scope: SCOPES,
+      prompt: "consent",
+    });
+    console.log("Generated Auth URL:", url);
+    res.json({ url });
+  } catch (error: any) {
+    console.error("Error generating auth URL:", error);
+    res.status(500).json({ error: "Failed to generate auth URL", details: error.message });
+  }
+});
+
+app.get(["/auth/google/callback", "/auth/google/callback/", "/api/auth/google/callback"], async (req, res) => {
+  const { code } = req.query;
+  try {
+    const { tokens } = await oauth2Client.getToken(code as string);
+    
+    // Store tokens in a cookie
+    res.cookie("google_tokens", JSON.stringify(tokens), {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
+    res.send(`
+      <html>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+              window.close();
+            } else {
+              window.location.href = '/';
+            }
+          </script>
+          <p>Authentication successful. This window should close automatically.</p>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error("Error exchanging code for tokens:", error);
+    res.status(500).send("Authentication failed");
+  }
+});
+
+app.get("/api/auth/status", (req, res) => {
+  const tokens = req.cookies.google_tokens;
+  res.json({ isAuthenticated: !!tokens });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  res.clearCookie("google_tokens", {
+    secure: true,
+    sameSite: "none",
+  });
+  res.json({ success: true });
+});
+
+// --- Sheets API Routes ---
+
+app.post("/api/sheets/sync", async (req, res) => {
+  const tokensStr = req.cookies.google_tokens;
+  if (!tokensStr) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  const tokens = JSON.parse(tokensStr);
+  oauth2Client.setCredentials(tokens);
+
+  const { students, spreadsheetId, sheetName } = req.body;
+
+  try {
+    const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+
+    // If no spreadsheetId, create a new one
+    let targetSpreadsheetId = spreadsheetId;
+    if (!targetSpreadsheetId) {
+      const spreadsheet = await sheets.spreadsheets.create({
+        requestBody: {
+          properties: {
+            title: `Student Grade Tracker - ${new Date().toLocaleDateString()}`,
+          },
+        },
+      });
+      targetSpreadsheetId = spreadsheet.data.spreadsheetId;
+    }
+
+    // Prepare data
+    const header = [
+      "เลขที่", "รหัสประจำตัว", "ชื่อ-นามสกุล", 
+      "พฤติกรรม", "เข้าเรียน", 
+      "งาน 1 (ส่วน 1)", "งาน 1 (ส่วน 2)", "งาน 1 (ส่วน 3)",
+      "งาน 2 (ส่วน 1)", "งาน 2 (ส่วน 2)", "งาน 2 (ส่วน 3)",
+      "งาน 3 (ส่วน 1)", "งาน 3 (ส่วน 2)", "งาน 3 (ส่วน 3)",
+      "กลางภาค", "ปลายภาค", "รวม", "เกรด"
+    ];
+
+    const rows = students.map((s: any) => [
+      s.no, s.studentId, s.name,
+      s.behavior, s.attendance,
+      s.assignment1.part1, s.assignment1.part2, s.assignment1.part3,
+      s.assignment2.part1, s.assignment2.part2, s.assignment2.part3,
+      s.assignment3.part1, s.assignment3.part2, s.assignment3.part3,
+      s.midterm, s.final,
+      calculateTotal(s),
+      getGrade(calculateTotal(s))
+    ]);
+
+    const values = [header, ...rows];
+
+    // Update the sheet
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: targetSpreadsheetId,
+      range: `${sheetName || "Sheet1"}!A1`,
+      valueInputOption: "RAW",
+      requestBody: { values },
+    });
+
+    res.json({ 
+      success: true, 
+      spreadsheetId: targetSpreadsheetId,
+      url: `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}`
+    });
+  } catch (error: any) {
+    console.error("Sheets API error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper functions (mirrored from frontend for server-side calculation if needed)
+function calculateTotal(student: any) {
+  const a1 = student.assignment1.part1 + student.assignment1.part2 + student.assignment1.part3;
+  const a2 = student.assignment2.part1 + student.assignment2.part2 + student.assignment2.part3;
+  const a3 = student.assignment3.part1 + student.assignment3.part2 + student.assignment3.part3;
+  return student.behavior + student.attendance + a1 + a2 + a3 + student.midterm + student.final;
+}
+
+function getGrade(total: number) {
+  const scale = [
+    { min: 80, grade: '4.0' }, { min: 75, grade: '3.5' }, { min: 70, grade: '3.0' },
+    { min: 65, grade: '2.5' }, { min: 60, grade: '2.0' }, { min: 55, grade: '1.5' },
+    { min: 50, grade: '1.0' }, { min: 0, grade: '0' },
+  ];
+  for (const s of scale) { if (total >= s.min) return s.grade; }
+  return '0';
+}
+
+// --- Vite Middleware ---
+
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
