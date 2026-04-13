@@ -127,15 +127,21 @@ app.post("/api/sheets/sync", async (req, res) => {
 
     // If no spreadsheetId, create a new one
     let targetSpreadsheetId = spreadsheetId;
+    let targetSheetName = sheetName || "Sheet1";
+
     if (!targetSpreadsheetId) {
       const spreadsheet = await sheets.spreadsheets.create({
         requestBody: {
           properties: {
-            title: `Student Grade Tracker - ${new Date().toLocaleDateString()}`,
+            title: `Student Grade Tracker - ${new Date().toLocaleString('th-TH')}`,
           },
         },
       });
       targetSpreadsheetId = spreadsheet.data.spreadsheetId;
+      // Get the actual name of the first sheet created
+      if (spreadsheet.data.sheets && spreadsheet.data.sheets.length > 0) {
+        targetSheetName = spreadsheet.data.sheets[0].properties?.title || "Sheet1";
+      }
     }
 
     // Prepare data
@@ -163,8 +169,8 @@ app.post("/api/sheets/sync", async (req, res) => {
 
     // Update the sheet
     await sheets.spreadsheets.values.update({
-      spreadsheetId: targetSpreadsheetId,
-      range: `${sheetName || "Sheet1"}!A1`,
+      spreadsheetId: targetSpreadsheetId!,
+      range: `${targetSheetName}!A1`,
       valueInputOption: "RAW",
       requestBody: { values },
     });
