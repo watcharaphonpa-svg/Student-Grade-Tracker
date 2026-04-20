@@ -67,24 +67,27 @@ service cloud.firestore {
     // --- Collection Rules ---
 
     match /subjects/{subjectId} {
-      allow read: if true; // Students need to see subjects
-      allow write: if isTeacher() && isValidSubject(incoming());
+      allow read: if true;
+      allow create, update: if isTeacher() && isValidSubject(incoming());
+      allow delete: if isTeacher();
     }
 
     match /classRooms/{classId} {
       allow read: if true;
-      allow write: if isTeacher() && isValidClassRoom(incoming());
+      allow create, update: if isTeacher() && isValidClassRoom(incoming());
+      allow delete: if isTeacher();
     }
 
     match /assignments/{assignmentId} {
       allow read: if true;
-      allow write: if isTeacher() && isValidAssignment(incoming());
+      allow create, update: if isTeacher() && isValidAssignment(incoming());
+      allow delete: if isTeacher();
     }
 
     match /students/{studentDocId} {
-      allow read: if true; // Public for students to check their grades by ID
-      allow write: if isTeacher() && isValidStudent(incoming());
-      allow update: if isTeacher() && isValidStudent(incoming());
+      allow read: if true;
+      allow create, update: if isTeacher() && isValidStudent(incoming());
+      allow delete: if isTeacher();
     }
 
     match /submissions/{submissionId} {

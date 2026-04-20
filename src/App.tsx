@@ -329,6 +329,27 @@ export default function App() {
     await deleteDoc(doc(db, 'students', id));
   };
 
+  const removeAllStudents = async () => {
+    if (students.length === 0) return;
+    
+    const isTeacher = user?.email === 'watcharaphon_pa@t-tech.ac.th';
+    if (!isTeacher) {
+      alert('⚠️ เฉพาะครูที่เข้าสู่ระบบเท่านั้นที่สามารถลบรายชื่อนักเรียนได้');
+      return;
+    }
+
+    if (window.confirm(`⚠️ คำเตือน: คุณกำลังจะลบรายชื่อนักเรียนทั้งหมดในห้องนี้ (${students.length} คน)\n\nการดำเนินการนี้ไม่สามารถย้อนกลับได้ ยืนยันที่จะลบหรือไม่?`)) {
+      try {
+        const promises = students.map(s => deleteDoc(doc(db, 'students', s.id)));
+        await Promise.all(promises);
+        alert('✅ ลบรายชื่อนักเรียนทั้งหมดเรียบร้อยแล้ว');
+      } catch (err: any) {
+        console.error('Error removing all students:', err);
+        alert(`❌ เกิดข้อผิดพลาด: ${err.message || 'ไม่สามารถลบข้อมูลได้'}`);
+      }
+    }
+  };
+
   const updateStudent = async (id: string, field: string, value: any) => {
     const studentRef = doc(db, 'students', id);
     const s = students.find(st => st.id === id);
@@ -725,6 +746,16 @@ export default function App() {
                 นำเข้าไฟล์ CSV
                 <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
               </label>
+
+              {students.length > 0 && (
+                <button 
+                  onClick={removeAllStudents}
+                  className="flex items-center gap-2 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
+                >
+                  <Trash2 className="w-5 h-5" />
+                  ลบรายชื่อทั้งหมด
+                </button>
+              )}
             </div>
           )}
         </header>
