@@ -255,7 +255,7 @@ export default function App() {
     }
   }, []);
 
-  const [teacherTab, setTeacherTab] = useState<'grades' | 'assignments' | 'submissions' | 'attendance'>('grades');
+  const [teacherTab, setTeacherTab] = useState<'grades' | 'assignments' | 'submissions' | 'attendance' | 'attendanceSummary'>('grades');
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [currentAttendance, setCurrentAttendance] = useState<Record<string, 'present' | 'late' | 'absent' | 'leave'>>({});
 
@@ -904,6 +904,15 @@ export default function App() {
                   <CheckCircle2 className="w-4 h-4" />
                   เช็คชื่อ
                 </button>
+                <button 
+                  onClick={() => setTeacherTab('attendanceSummary')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm ${
+                    teacherTab === 'attendanceSummary' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  สรุปเช็คชื่อ
+                </button>
               </div>
 
               {/* Context Selectors */}
@@ -1501,6 +1510,83 @@ export default function App() {
                 </div>
               </div>
             )}
+            {teacherTab === 'attendanceSummary' && (
+              <div className="space-y-6">
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 border border-indigo-100">
+                      <GraduationCap className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-800">สรุปการมาเรียนปลายเทอม</h2>
+                      <p className="text-slate-500 font-medium text-sm">เกณฑ์: สาย 4 ครั้ง = ขาด 1 | ลา 2 ครั้ง = ขาด 1 | ขาดได้ไม่เกิน 13/64 ครั้ง</p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden border border-slate-100 rounded-2xl">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-slate-50">
+                        <tr className="italic">
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold">ชื่อ-นามสกุล</th>
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">มา</th>
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">สาย</th>
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">ขาด</th>
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">ลา</th>
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-indigo-500 font-black text-center">รวมขาดสะสม</th>
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">สถานะ</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {students.map(student => {
+                          const records = (appData.attendance || []).filter(r => r.studentId === student.studentId && r.courseKey === currentCourseKey);
+                          const counts = {
+                            present: records.filter(r => r.status === 'present').length,
+                            late: records.filter(r => r.status === 'late').length,
+                            absent: records.filter(r => r.status === 'absent').length,
+                            leave: records.filter(r => r.status === 'leave').length,
+                          };
+                          const effectiveAbsents = counts.absent + Math.floor(counts.late / 4) + Math.floor(counts.leave / 2);
+                          const isFailed = effectiveAbsents > 13;
+                          const isWarning = effectiveAbsents >= 10;
+
+                          return (
+                            <tr key={student.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-4">
+                                <div className="font-bold text-slate-700">{student.name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono italic">เรียนแล้ว {records.length} / 64 ครั้ง</div>
+                              </td>
+                              <td className="p-4 text-center font-mono text-emerald-600 font-bold">{counts.present}</td>
+                              <td className="p-4 text-center font-mono text-amber-600 font-bold">{counts.late}</td>
+                              <td className="p-4 text-center font-mono text-rose-600 font-bold">{counts.absent}</td>
+                              <td className="p-4 text-center font-mono text-indigo-600 font-bold">{counts.leave}</td>
+                              <td className="p-4 text-center">
+                                <span className={`text-xl font-black ${isFailed ? 'text-rose-600' : isWarning ? 'text-amber-500' : 'text-indigo-600'}`}>
+                                  {effectiveAbsents}
+                                </span>
+                                <span className="text-[10px] text-slate-300 ml-1">/ 13</span>
+                              </td>
+                              <td className="p-4 text-center">
+                                {isFailed ? (
+                                  <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">ไม่มีสิทธิ์สอบ</span>
+                                ) : isWarning ? (
+                                  <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">เริ่มเสี่ยง</span>
+                                ) : (
+                                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">ปกติ</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </motion.div>
+              </div>
+            )}
             {teacherTab === 'attendance' && (
               /* Attendance View */
               <div className="space-y-6">
@@ -1606,7 +1692,7 @@ export default function App() {
                   <motion.div 
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="md:col-span-4 bg-gradient-to-br from-indigo-600 to-indigo-800 p-8 rounded-3xl text-white shadow-xl flex flex-col justify-between"
+                    className="md:col-span-4 bg-gradient-to-br from-indigo-600 to-indigo-800 p-8 rounded-3xl text-white shadow-xl flex flex-col gap-6 self-start"
                   >
                     <div className="space-y-6">
                       <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-md">
@@ -1620,7 +1706,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="space-y-4 pt-8">
+                    <div className="space-y-4">
                        <a 
                          href="https://check-in-pro.vercel.app/" 
                          target="_blank" 
@@ -1782,52 +1868,93 @@ export default function App() {
                        </div>
                     </div>
 
-                    {/* Attendance History Card */}
-                    <div className="md:col-span-4 bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl space-y-8 h-full flex flex-col">
-                      <div className="flex items-center justify-between">
-                         <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                           <div className="p-2.5 bg-amber-50 text-amber-600 rounded-2xl">
-                             <CheckCircle2 className="w-6 h-6" />
+                    {/* Detailed Attendance Card */}
+                    <div className="md:col-span-4 bg-white p-8 rounded-[3rem] border border-slate-200 shadow-xl space-y-6 h-full flex flex-col relative overflow-hidden group">
+                       <div className="flex items-center justify-between relative z-10">
+                         <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
+                           <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                             <CheckCircle2 className="w-5 h-5" />
                            </div>
-                           การมาเรียน
+                           สรุปการเข้าเรียน
                          </h3>
                        </div>
 
-                       <div className="grid grid-cols-2 gap-3">
-                         {[
-                           { label: 'มา', key: 'present', color: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
-                           { label: 'สาย', key: 'late', color: 'bg-amber-50 text-amber-600 border-amber-100' },
-                           { label: 'ขาด', key: 'absent', color: 'bg-rose-50 text-rose-600 border-rose-100' },
-                           { label: 'ลา', key: 'leave', color: 'bg-indigo-50 text-indigo-600 border-indigo-100' }
-                         ].map(stat => {
-                           const count = (appData.attendance || []).filter(a => a.studentId === foundStudent.studentId && a.status === stat.key).length;
-                           return (
-                             <div key={stat.key} className={`p-4 rounded-2xl border text-center ${stat.color}`}>
-                               <p className="text-[10px] font-black uppercase mb-1">{stat.label}</p>
-                               <p className="text-2xl font-black">{count}</p>
-                             </div>
-                           )
-                         })}
-                       </div>
+                       {(() => {
+                         const studentRecords = (appData.attendance || []).filter(a => a.studentId === foundStudent.studentId);
+                         const counts = {
+                           present: studentRecords.filter(a => a.status === 'present').length,
+                           late: studentRecords.filter(a => a.status === 'late').length,
+                           absent: studentRecords.filter(a => a.status === 'absent').length,
+                           leave: studentRecords.filter(a => a.status === 'leave').length,
+                         };
+                         const effectiveAbsents = counts.absent + Math.floor(counts.late / 4) + Math.floor(counts.leave / 2);
+                         const isFailed = effectiveAbsents > 13;
+                         const isWarning = effectiveAbsents >= 10;
+                         const progress = Math.min((studentRecords.length / 64) * 100, 100);
 
-                       <div className="flex-1 overflow-y-auto pr-2 space-y-2 max-h-[400px] scrollbar-hide">
-                         {(appData.attendance || []).filter(a => a.studentId === foundStudent.studentId).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 15).map(record => (
-                           <div key={record.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100 text-[10px]">
-                             <span className="font-black text-slate-500 uppercase">{new Date(record.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</span>
-                             <span className={`px-2 py-0.5 rounded-full font-black uppercase ${
-                               record.status === 'present' ? 'bg-emerald-100 text-emerald-600' :
-                               record.status === 'late' ? 'bg-amber-100 text-amber-600' :
-                               record.status === 'absent' ? 'bg-rose-100 text-rose-600' :
-                               'bg-indigo-100 text-indigo-600'
+                         return (
+                           <>
+                             <div className="grid grid-cols-2 gap-3">
+                               <div className="bg-emerald-50/50 p-3 rounded-2xl border border-emerald-100/50 text-center">
+                                 <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">มา</p>
+                                 <p className="text-xl font-black text-emerald-700">{counts.present}</p>
+                               </div>
+                               <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-100/50 text-center">
+                                 <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">สาย</p>
+                                 <p className="text-xl font-black text-amber-700">{counts.late}</p>
+                               </div>
+                               <div className="bg-rose-50/50 p-3 rounded-2xl border border-rose-100/50 text-center">
+                                 <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">ขาด</p>
+                                 <p className="text-xl font-black text-rose-700">{counts.absent}</p>
+                               </div>
+                               <div className="bg-indigo-50/50 p-3 rounded-2xl border border-indigo-100/50 text-center">
+                                 <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">ลา</p>
+                                 <p className="text-xl font-black text-indigo-700">{counts.leave}</p>
+                               </div>
+                             </div>
+
+                             <div className={`p-5 rounded-[2rem] border-2 space-y-3 transition-all ${
+                               isFailed ? 'bg-rose-50 border-rose-100' : 
+                               isWarning ? 'bg-amber-50 border-amber-100' : 
+                               'bg-slate-50 border-slate-100'
                              }`}>
-                               {record.status === 'present' ? 'มา' : record.status === 'late' ? 'สาย' : record.status === 'absent' ? 'ขาด' : 'ลา'}
-                             </span>
-                           </div>
-                         ))}
-                         {(appData.attendance || []).filter(a => a.studentId === foundStudent.studentId).length === 0 && (
-                           <div className="text-center py-8 text-slate-300 text-[10px] font-bold">ยังไม่มีข้อมูลการเข้าเรียน</div>
-                         )}
-                       </div>
+                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">คำนวณขาดสะสมเทียบเท่า</p>
+                               <div className="text-center">
+                                 <span className={`text-5xl font-black ${isFailed ? 'text-rose-600' : isWarning ? 'text-amber-500' : 'text-slate-800'}`}>
+                                   {effectiveAbsents}
+                                 </span>
+                                 <span className="text-slate-300 text-sm font-bold ml-1">/ 13</span>
+                               </div>
+                               <div className="flex justify-center">
+                                 {isFailed ? (
+                                   <span className="bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase">ไม่มีสิทธิ์สอบ</span>
+                                 ) : isWarning ? (
+                                   <span className="bg-amber-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase">ระวังตัว</span>
+                                 ) : (
+                                   <span className="bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase">ปกติ</span>
+                                 )}
+                               </div>
+                             </div>
+
+                             <div className="space-y-2 mt-auto">
+                               <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase">
+                                 <span>เรียนแล้ว {studentRecords.length} / 64 ครั้ง</span>
+                                 <span>{Math.round(progress)}%</span>
+                               </div>
+                               <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                  <motion.div 
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${progress}%` }}
+                                    className={`h-full ${isFailed ? 'bg-rose-500' : 'bg-indigo-600'}`}
+                                  />
+                               </div>
+                               <p className="text-[8px] text-slate-400 font-medium italic leading-tight">
+                                 * สาย 4 = ขาด 1 | ลา 2 = ขาด 1 | ขาดสะสมห้ามเกิน 13 (20%)
+                               </p>
+                             </div>
+                           </>
+                         );
+                       })()}
                     </div>
 
                     {/* Online Assignments Card */}
