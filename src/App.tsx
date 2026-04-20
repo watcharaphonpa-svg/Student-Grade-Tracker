@@ -174,6 +174,10 @@ export default function App() {
     // Students (Combined into courses locally for compatibility with existing UI)
     const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
       const allStudents = snap.docs.map(d => d.data() as Student);
+      
+      // Sort numerically by 'no'
+      allStudents.sort((a, b) => (Number(a.no) || 0) - (Number(b.no) || 0));
+
       const courses: Record<string, Student[]> = {};
       allStudents.forEach(s => {
         if (!courses[s.courseKey]) courses[s.courseKey] = [];
@@ -276,8 +280,14 @@ export default function App() {
   const handleFirebaseLogin = async () => {
     try {
       await signInWithGoogle();
-    } catch (err) {
-      alert('เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    } catch (err: any) {
+      console.error('Firebase Login Error:', err);
+      // Give more specific error message to help the user fix deployment issues
+      if (err.code === 'auth/unauthorized-domain') {
+        alert('❌ เข้าสู่ระบบไม่สำเร็จ: โดเมนนี้ยังไม่ได้รับอนุญาตใน Firebase Console\n\nวิธีแก้ไข:\n1. ไปที่ Firebase Console\n2. เข้าเมนู Authentication > Settings > Authorized domains\n3. เพิ่มโดเมน vercel.app ของคุณเข้าไป');
+      } else {
+        alert(`เข้าสู่ระบบไม่สำเร็จ: ${err.message || 'กรุณาลองใหม่อีกครั้ง'}`);
+      }
     }
   };
 
