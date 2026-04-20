@@ -237,7 +237,7 @@ export default function App() {
       try {
         const res = await fetch('/api/auth/status');
         const data = await res.json();
-        setIsGoogleAuth(data.authenticated);
+        setIsGoogleAuth(!!data.isAuthenticated);
       } catch (err) {
         console.error('Failed to check auth status', err);
       }
@@ -245,9 +245,9 @@ export default function App() {
     checkAuth();
 
     const handleMessage = (event: MessageEvent) => {
-      if (event.data === 'OAUTH_AUTH_SUCCESS') {
+      if (event.data === 'OAUTH_AUTH_SUCCESS' || event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         setIsGoogleAuth(true);
-        alert('เชื่อมต่อ Google Sheets สำเร็จ!');
+        alert('✅ เชื่อมต่อ Google Sheets สำเร็จ!');
       }
     };
     window.addEventListener('message', handleMessage);
