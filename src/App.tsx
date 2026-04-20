@@ -93,17 +93,23 @@ const MAX_SCORES = {
 };
 
 // --- Helpers ---
-const calculateTotal = (student: Student): number => {
+const calculateTotal = (student: Student, submissions: Submission[] = []): number => {
   const a1 = (student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0);
   const a2 = (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0);
   const a3 = (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0);
   
+  // Also add scores from digital submissions
+  const submissionScores = (submissions || [])
+    .filter(sub => sub.studentId === student.studentId && sub.status === 'graded')
+    .reduce((total, sub) => total + (Number(sub.score) || 0), 0);
+
   return (
     (student.behavior || 0) +
     (student.attendance || 0) +
     a1 + a2 + a3 +
     (student.midterm || 0) +
-    (student.final || 0)
+    (student.final || 0) +
+    submissionScores
   );
 };
 
@@ -194,6 +200,7 @@ export default function App() {
       unsubStudents();
     };
   }, [user]); // Re-run when user changes to update submission listener
+
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [manageType, setManageType] = useState<'subject' | 'class' | 'assignment'>('subject');
   const [newItemName, setNewItemName] = useState('');
@@ -226,6 +233,20 @@ export default function App() {
   // Student Portal State
   const [searchId, setSearchId] = useState('');
   const [foundStudent, setFoundStudent] = useState<Student | null>(null);
+
+  // Student-specific submission listener when searching
+  useEffect(() => {
+    if (!foundStudent || user?.email === 'watcharaphon_pa@t-tech.ac.th') return;
+
+    const q = query(collection(db, 'submissions'), where('studentId', '==', foundStudent.studentId));
+    const unsub = onSnapshot(q, (snap) => {
+      setAppData(prev => ({ 
+        ...prev, 
+        submissions: snap.docs.map(d => d.data() as Submission) 
+      }));
+    });
+    return unsub;
+  }, [foundStudent, user]);
 
   // Remove LocalStorage sync
   // useEffect(() => {
@@ -297,7 +318,10 @@ export default function App() {
       const res = await fetch('/api/sheets/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ students })
+        body: JSON.stringify({ 
+          students,
+          submissions: appData.submissions
+        })
       });
       
       if (!res.ok) {
@@ -397,14 +421,14 @@ export default function App() {
 
   const stats = useMemo(() => {
     if (students.length === 0) return { avg: 0, passRate: 0 };
-    const totals = students.map(calculateTotal);
+    const totals = students.map(s => calculateTotal(s, appData.submissions));
     const avg = totals.reduce((a, b) => a + b, 0) / students.length;
     const passCount = totals.filter(t => t >= 50).length;
     return {
       avg: avg.toFixed(2),
       passRate: ((passCount / students.length) * 100).toFixed(1)
     };
-  }, [students]);
+  }, [students, appData.submissions]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -827,7 +851,7 @@ export default function App() {
                       <tbody className="divide-y divide-slate-100">
                         <AnimatePresence initial={false}>
                           {students.map((student) => {
-                            const total = calculateTotal(student);
+                            const total = calculateTotal(student, appData.submissions);
                             const grade = getGrade(total);
                             const isExp = isExpanded[student.id];
 
@@ -1274,9 +1298,9 @@ export default function App() {
                     <div className="flex flex-col items-center justify-center bg-indigo-50/50 rounded-3xl p-6 border border-indigo-100">
                       <p className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-1">เกรดเฉลี่ยปัจจุบัน</p>
                       <div className="text-6xl font-black text-indigo-600 mb-2">
-                        {getGrade(calculateTotal(foundStudent))}
+                        {getGrade(calculateTotal(foundStudent, appData.submissions))}
                       </div>
-                      <p className="text-sm text-indigo-400 font-medium">คะแนนรวม {calculateTotal(foundStudent)} / 100</p>
+                      <p className="text-sm text-indigo-400 font-medium">คะแนนรวม {calculateTotal(foundStudent, appData.submissions)} / 100</p>
                     </div>
                   </div>
 

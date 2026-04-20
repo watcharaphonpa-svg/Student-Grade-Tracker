@@ -91,8 +91,8 @@ service cloud.firestore {
     }
 
     match /submissions/{submissionId} {
-      allow read: if isTeacher() || (isSignedIn() && existing().studentId == request.auth.uid); // Student can see their own or Teacher
-      allow create: if isValidSubmission(incoming()); // Anyone can submit for now if they have assignment ID
+      allow read: if true; // Allow students to check their work/grades
+      allow create: if isValidSubmission(incoming());
       allow update: if isTeacher() && isValidSubmission(incoming());
       allow delete: if isTeacher();
     }

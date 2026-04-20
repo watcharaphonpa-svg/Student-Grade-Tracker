@@ -103,15 +103,30 @@ app.post("/api/sheets/sync", async (req, res) => {
     const client = getOAuth2Client(req);
     client.setCredentials(tokens);
     const sheets = google.sheets({ version: "v4", auth: client });
-    const { students, spreadsheetId, sheetName } = req.body;
+    const { students, submissions, spreadsheetId, sheetName } = req.body;
+    
     let targetSpreadsheetId = spreadsheetId;
-    let targetSheetName = sheetName || "Sheet1";
+    let targetSheetName = sheetName;
+
+    // If we have an ID, verify the spreadsheet and get the correct sheet name
+    if (targetSpreadsheetId) {
+      try {
+        const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: targetSpreadsheetId });
+        if (!targetSheetName) {
+          targetSheetName = spreadsheet.data.sheets?.[0].properties?.title || "Sheet1";
+        }
+      } catch (e) {
+        // If ID is invalid, clear it to create a new one
+        targetSpreadsheetId = null;
+      }
+    }
 
     if (!targetSpreadsheetId) {
       const spreadsheet = await sheets.spreadsheets.create({
         requestBody: { properties: { title: `Student Grade Tracker - ${new Date().toLocaleString('th-TH')}` } },
       });
       targetSpreadsheetId = spreadsheet.data.spreadsheetId;
+      targetSheetName = spreadsheet.data.sheets?.[0].properties?.title || "Sheet1";
     }
 
     const rows = students.map((s: any) => [
@@ -121,8 +136,8 @@ app.post("/api/sheets/sync", async (req, res) => {
       s.assignment2?.part1 || 0, s.assignment2?.part2 || 0, s.assignment2?.part3 || 0,
       s.assignment3?.part1 || 0, s.assignment3?.part2 || 0, s.assignment3?.part3 || 0,
       s.midterm || 0, s.final || 0,
-      calculateTotal(s),
-      getGrade(calculateTotal(s))
+      calculateTotal(s, submissions),
+      getGrade(calculateTotal(s, submissions))
     ]);
 
     await sheets.spreadsheets.values.update({
@@ -159,11 +174,16 @@ app.post("/api/drive/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-function calculateTotal(s: any) {
+function calculateTotal(s: any, submissions: any[] = []) {
   const a1 = (s.assignment1?.part1 || 0) + (s.assignment1?.part2 || 0) + (s.assignment1?.part3 || 0);
   const a2 = (s.assignment2?.part1 || 0) + (s.assignment2?.part2 || 0) + (s.assignment2?.part3 || 0);
   const a3 = (s.assignment3?.part1 || 0) + (s.assignment3?.part2 || 0) + (s.assignment3?.part3 || 0);
-  return (s.behavior || 0) + (s.attendance || 0) + a1 + a2 + a3 + (s.midterm || 0) + (s.final || 0);
+  
+  const subScores = (submissions || [])
+    .filter((sub: any) => sub.studentId === s.studentId && sub.status === 'graded')
+    .reduce((acc: number, sub: any) => acc + (Number(sub.score) || 0), 0);
+
+  return (s.behavior || 0) + (s.attendance || 0) + a1 + a2 + a3 + (s.midterm || 0) + (s.final || 0) + subScores;
 }
 
 function getGrade(t: number) {
