@@ -4,7 +4,7 @@ import {
   ChevronRight, ChevronDown, Info, Cloud, CloudCheck, ExternalLink, 
   Loader2, Search, FileText, CheckCircle2, Clock, User, Upload, 
   BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle,
-  Link, Check
+  Link, Check, MoreVertical, LogOut, FileDown, Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -228,6 +228,7 @@ export default function App() {
   const [spreadsheetUrl, setSpreadsheetUrl] = useState<string | null>(null);
   const [view, setView] = useState<'teacher' | 'student'>('teacher');
   const [isLockedStudentView, setIsLockedStudentView] = useState(false);
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -284,7 +285,7 @@ export default function App() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const handleGoogleConnect = async () => {
+  const handleGoogleAuth = async () => {
     const popup = window.open('', 'GoogleOAuth', 'width=600,height=700');
     if (!popup) {
       alert('กรุณาอนุญาตให้เปิดหน้าต่าง Pop-up เพื่อเชื่อมต่อ Google');
@@ -650,202 +651,269 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans p-4 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+      <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
-            <div className="flex items-center gap-2 text-indigo-600">
-              <GraduationCap className="w-8 h-8" />
-              <h1 className="text-3xl font-bold tracking-tight">Student Grade Tracker</h1>
+            <div className="flex items-center gap-3 text-indigo-600">
+              <GraduationCap className="w-10 h-10" />
+              <h1 className="text-3xl font-black tracking-tight text-slate-800">Student Tracker</h1>
             </div>
-            <p className="text-slate-500">ระบบบันทึกและคำนวณคะแนนนักเรียนอัตโนมัติ</p>
+            <p className="text-slate-500 font-medium">ระบบบันทึกและคำนวณคะแนนนักเรียนอัตโนมัติ</p>
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
             {!isLockedStudentView && (
-              <>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center bg-slate-200/50 p-1 rounded-2xl border border-slate-200 shadow-inner">
+                  <button 
+                    onClick={() => setView('teacher')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all text-sm ${
+                      view === 'teacher' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <Users className="w-4 h-4" />
+                    หน้าครู
+                  </button>
+                  <button 
+                    onClick={() => setView('student')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all text-sm ${
+                      view === 'student' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <User className="w-4 h-4" />
+                    หน้าเด็ก
+                  </button>
+                </div>
+
                 {user ? (
-                  <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
-                    <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-6 h-6 rounded-full" />
-                    <span className="text-sm font-medium hidden sm:inline">{user.displayName}</span>
-                    <button onClick={() => auth.signOut()} className="text-xs text-slate-400 hover:text-red-500 transition-colors">ออกระบบ</button>
+                  <div className="relative">
+                    <button 
+                      onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
+                      className="p-3 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all shadow-sm hover:shadow-md active:scale-95"
+                    >
+                      <MoreVertical className="w-5 h-5 text-slate-500" />
+                    </button>
+                    
+                    <AnimatePresence>
+                      {isActionsMenuOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setIsActionsMenuOpen(false)} />
+                          <motion.div 
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            className="absolute right-0 top-full mt-3 w-64 bg-white rounded-3xl border border-slate-200 shadow-2xl z-50 overflow-hidden py-3"
+                          >
+                            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3 bg-slate-50/50">
+                              <img src={user.photoURL || ''} alt="" className="w-10 h-10 rounded-full border-2 border-white shadow-sm" />
+                              <div className="flex flex-col overflow-hidden">
+                                <span className="text-sm font-bold text-slate-800 truncate">{user.displayName}</span>
+                                <span className="text-[10px] text-slate-400 truncate">{user.email}</span>
+                              </div>
+                            </div>
+
+                            <div className="py-2">
+                              {/* Secondary Actions */}
+                              <label className="flex items-center gap-3 px-5 py-3 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 text-sm cursor-pointer transition-colors group">
+                                <FileDown className="w-4 h-4 text-slate-400 group-hover:text-indigo-500" />
+                                <span className="font-bold">นำเข้าไฟล์ (CSV)</span>
+                                <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+                              </label>
+
+                              {isGoogleAuth ? (
+                                spreadsheetUrl && (
+                                  <a 
+                                    href={spreadsheetUrl} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-3 px-5 py-3 hover:bg-emerald-50 text-emerald-600 text-sm transition-colors"
+                                  >
+                                    <CloudCheck className="w-4 h-4" />
+                                    <span className="font-bold">เปิด Google Sheets</span>
+                                  </a>
+                                )
+                              ) : (
+                                <button 
+                                  onClick={handleGoogleAuth}
+                                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-indigo-50 text-indigo-600 text-sm transition-colors text-left"
+                                >
+                                  <Cloud className="w-4 h-4" />
+                                  <span className="font-bold">เชื่อมต่อ Sheets</span>
+                                </button>
+                              )}
+
+                              <button 
+                                onClick={() => {
+                                  if(window.confirm('ยืนยันเลิกเชื่อมต่อ Google?')) setIsGoogleAuth(false);
+                                  setIsActionsMenuOpen(false);
+                                }}
+                                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 text-slate-400 text-sm transition-colors text-left"
+                              >
+                                <Settings className="w-4 h-4" />
+                                <span className="font-bold">ตั้งค่ากูเกิล</span>
+                              </button>
+
+                              {students.length > 0 && (
+                                <button 
+                                  onClick={() => {
+                                    if(window.confirm('⚠️ ยืนยันการลบรายชื่อนักเรียนทั้งหมดในวิชานี้?')) removeAllStudents();
+                                    setIsActionsMenuOpen(false);
+                                  }}
+                                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-rose-50 text-rose-600 text-sm transition-colors text-left"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  <span className="font-bold">ลบรายชื่อทั้งหมด</span>
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="mt-2 pt-2 border-t border-slate-100">
+                              <button 
+                                onClick={() => auth.signOut()} 
+                                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 text-slate-400 text-sm transition-colors text-left"
+                              >
+                                <LogOut className="w-4 h-4" />
+                                <span className="font-bold">ออกจากระบบ</span>
+                              </button>
+                            </div>
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
                   </div>
                 ) : (
                   <button 
                     onClick={handleFirebaseLogin}
-                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-all shadow-sm"
+                    className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-95"
                   >
                     <User className="w-4 h-4" />
                     เข้าสู่ระบบครู
                   </button>
                 )}
+              </div>
+            )}
+          </div>
+        </header>
 
-                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  <button 
-                    onClick={() => setView('teacher')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                    view === 'teacher' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+        {view === 'teacher' && (
+          <div className="space-y-6">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col xl:flex-row xl:items-center justify-between gap-6"
+            >
+              {/* Tab Navigation */}
+              <div className="flex items-center bg-slate-200/50 p-1.5 rounded-2xl border border-slate-200 shadow-inner w-fit">
+                <button 
+                  onClick={() => setTeacherTab('grades')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm ${
+                    teacherTab === 'grades' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  <Users className="w-4 h-4" />
-                  สำหรับครู
+                  <Calculator className="w-4 h-4" />
+                  ตารางคะแนน
                 </button>
                 <button 
-                  onClick={() => setView('student')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                    view === 'student' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  onClick={() => setTeacherTab('assignments')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm ${
+                    teacherTab === 'assignments' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  <User className="w-4 h-4" />
-                  สำหรับนักเรียน
+                  <LayoutDashboard className="w-4 h-4" />
+                  จัดการงาน
                 </button>
-              </div>
-            </>
-          )}
-        </div>
-
-          {view === 'teacher' && (
-            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-              <button 
-                onClick={() => setTeacherTab('grades')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  teacherTab === 'grades' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                ตารางคะแนน
-              </button>
-              <button 
-                onClick={() => setTeacherTab('assignments')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  teacherTab === 'assignments' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                จัดการงาน
-              </button>
-              <button 
-                onClick={() => setTeacherTab('submissions')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  teacherTab === 'submissions' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                ตรวจงาน ({(appData.submissions || []).filter(s => s.status === 'pending').length})
-              </button>
-            </div>
-          )}
-
-          {view === 'teacher' && (
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
-                <BookOpen className="w-4 h-4 text-indigo-600" />
-                <select 
-                  value={selectedSubjectId}
-                  onChange={(e) => setSelectedSubjectId(e.target.value)}
-                  className="bg-transparent border-none outline-none text-sm font-bold text-slate-700 pr-8"
-                >
-                  {appData.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
                 <button 
-                  onClick={() => { setManageType('subject'); setIsManageModalOpen(true); }}
-                  className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
+                  onClick={() => setTeacherTab('submissions')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm relative ${
+                    teacherTab === 'submissions' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
+                  }`}
                 >
-                  <Settings className="w-4 h-4 text-slate-400" />
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
-                <Users className="w-4 h-4 text-indigo-600" />
-                <select 
-                  value={selectedClassId}
-                  onChange={(e) => setSelectedClassId(e.target.value)}
-                  className="bg-transparent border-none outline-none text-sm font-bold text-slate-700 pr-8"
-                >
-                  {appData.classRooms.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <button 
-                  onClick={() => { setManageType('class'); setIsManageModalOpen(true); }}
-                  className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
-                >
-                  <Settings className="w-4 h-4 text-slate-400" />
-                </button>
-              </div>
-
-              <div className="h-8 w-px bg-slate-200 mx-1 hidden md:block" />
-
-              {isGoogleAuth ? (
-                <div className="flex items-center gap-2">
-                  {spreadsheetUrl && (
-                    <a 
-                      href={spreadsheetUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-100 hover:bg-emerald-100 transition-colors"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      เปิด Google Sheets
-                    </a>
+                  <Monitor className="w-4 h-4" />
+                  ตรวจงาน
+                  {(appData.submissions || []).filter(s => s.status === 'pending').length > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white ring-2 ring-white">
+                      {(appData.submissions || []).filter(s => s.status === 'pending').length}
+                    </span>
                   )}
-                  <button 
-                    onClick={handleSyncToSheets}
-                    disabled={isSyncing}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                </button>
+              </div>
+
+              {/* Context Selectors */}
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-5 py-3 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
+                  <BookOpen className="w-4 h-4 text-indigo-600" />
+                  <select 
+                    value={selectedSubjectId}
+                    onChange={(e) => setSelectedSubjectId(e.target.value)}
+                    className="bg-transparent border-none outline-none text-sm font-bold text-slate-700 pr-4 min-w-[120px]"
                   >
-                    {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CloudCheck className="w-5 h-5" />}
-                    {isSyncing ? 'กำลังซิงค์...' : 'ซิงค์ข้อมูล'}
+                    {appData.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <button onClick={() => { setManageType('subject'); setIsManageModalOpen(true); }} className="hover:bg-slate-100 p-2 rounded-xl transition-colors">
+                    <Settings className="w-4 h-4 text-slate-400" />
                   </button>
                 </div>
-              ) : (
-                <button 
-                  onClick={handleGoogleConnect}
-                  className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
-                >
-                  <Cloud className="w-5 h-5 text-indigo-600" />
-                  เชื่อมต่อ Google Sheets
-                </button>
-              )}
-              <button 
-                onClick={addStudent}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
-              >
-                <Plus className="w-5 h-5" />
-                เพิ่มนักเรียน
-              </button>
 
-              <button 
-                onClick={() => {
-                  const url = new URL(window.location.href);
-                  url.searchParams.set('portal', 'student');
-                  navigator.clipboard.writeText(url.toString());
-                  alert('คัดลอกลิงก์สำหรับนักเรียนเรียบร้อยแล้ว!\nนักเรียนจะเห็นเฉพาะเมนูค้นหาคะแนนเท่านั้น');
-                }}
-                className="flex items-center gap-2 bg-white hover:bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
-                title="คัดลอกลิงก์สำหรับส่งให้นักเรียน"
-              >
-                <Link className="w-5 h-5" />
-                ลิงก์สำหรับนักเรียน
-              </button>
+                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-5 py-3 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
+                  <Users className="w-4 h-4 text-indigo-600" />
+                  <select 
+                    value={selectedClassId}
+                    onChange={(e) => setSelectedClassId(e.target.value)}
+                    className="bg-transparent border-none outline-none text-sm font-bold text-slate-700 pr-4 min-w-[80px]"
+                  >
+                    {appData.classRooms.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <button onClick={() => { setManageType('class'); setIsManageModalOpen(true); }} className="hover:bg-slate-100 p-2 rounded-xl transition-colors">
+                    <Settings className="w-4 h-4 text-slate-400" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
 
-              <label 
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95 cursor-pointer"
-                title="รูปแบบไฟล์: เลขที่, รหัสประจำตัว, ชื่อ-นามสกุล"
+            {teacherTab === 'grades' && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-white rounded-3xl border border-slate-200 shadow-sm"
               >
-                <Upload className="w-5 h-5 text-indigo-600" />
-                นำเข้าไฟล์ CSV
-                <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
-              </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button 
+                    onClick={addStudent}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-100 active:scale-95"
+                  >
+                    <Plus className="w-5 h-5" />
+                    เพิ่มนักเรียน
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const url = new URL(window.location.href);
+                      url.searchParams.set('portal', 'student');
+                      navigator.clipboard.writeText(url.toString());
+                      alert('คัดลอกลิงก์สำหรับส่งให้นักเรียนเรียบร้อยแล้ว!');
+                    }}
+                    className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 px-6 py-3 rounded-2xl font-bold transition-all active:scale-95"
+                  >
+                    <Link className="w-5 h-5" />
+                    แชร์ลิงก์ให้เด็ก
+                  </button>
+                </div>
 
-              {students.length > 0 && (
-                <button 
-                  onClick={removeAllStudents}
-                  className="flex items-center gap-2 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
-                >
-                  <Trash2 className="w-5 h-5" />
-                  ลบรายชื่อทั้งหมด
-                </button>
-              )}
-            </div>
-          )}
-        </header>
+                <div className="flex items-center gap-3">
+                  {isGoogleAuth && (
+                    <button 
+                      onClick={handleSyncToSheets}
+                      disabled={isSyncing}
+                      className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-6 py-3 rounded-2xl font-bold transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CloudCheck className="w-5 h-5 text-indigo-500" />}
+                      อัปเดต Google Sheets
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </div>
+        )}
 
         {view === 'teacher' ? (
           <>
@@ -1368,32 +1436,45 @@ export default function App() {
           </>
         ) : (
           /* Student View */
-          <div className="max-w-3xl mx-auto space-y-8">
-            <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold text-slate-800">ระบบติดตามงานสำหรับนักเรียน</h2>
-                <p className="text-slate-500">กรอกรหัสประจำตัวเพื่อตรวจสอบคะแนนและสถานะการส่งงาน</p>
+          <div className="max-w-3xl mx-auto space-y-10 py-10">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="relative overflow-hidden bg-white p-10 rounded-[3rem] border border-slate-200 shadow-2xl shadow-indigo-100/50 space-y-8"
+            >
+              <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 bg-indigo-50 rounded-full blur-3xl opacity-50" />
+              <div className="absolute bottom-0 left-0 -ml-12 -mb-12 w-48 h-48 bg-emerald-50 rounded-full blur-3xl opacity-50" />
+
+              <div className="text-center space-y-3 relative">
+                <div className="inline-flex p-4 bg-indigo-600 text-white rounded-3xl shadow-lg shadow-indigo-200 mb-2">
+                  <Search className="w-8 h-8" />
+                </div>
+                <h2 className="text-3xl font-black text-slate-800 tracking-tight">Student Portal</h2>
+                <p className="text-slate-500 font-medium max-w-sm mx-auto leading-relaxed">
+                  กรอกรหัสประจำตัวเพื่อตรวจสอบคะแนน <br /> และประวัติการส่งงานของคุณ
+                </p>
               </div>
 
-              <form onSubmit={handleSearch} className="flex gap-2">
+              <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3 relative">
                 <div className="relative flex-1">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <User className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-indigo-400" />
                   <input 
                     type="text" 
-                    placeholder="กรอกรหัสประจำตัวนักเรียน (เช่น 66001)"
+                    placeholder="รหัสประจำตัว (เช่น 66001)"
                     value={searchId}
                     onChange={(e) => setSearchId(e.target.value)}
-                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-lg font-medium"
+                    className="w-full pl-14 pr-6 py-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem] focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none text-xl font-bold transition-all placeholder:text-slate-300 placeholder:font-medium"
                   />
                 </div>
                 <button 
                   type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-2xl font-bold transition-all shadow-sm hover:shadow-md active:scale-95"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-10 py-5 rounded-[2rem] font-black text-lg transition-all shadow-xl shadow-indigo-100 active:scale-95 group flex items-center justify-center gap-2"
                 >
                   ค้นหา
+                  <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>
               </form>
-            </div>
+            </motion.div>
 
             <AnimatePresence mode="wait">
               {foundStudent ? (
@@ -1405,144 +1486,169 @@ export default function App() {
                   className="space-y-6"
                 >
                   {/* Student Info Card */}
-                  <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center">
-                          <User className="w-8 h-8" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-indigo-600 uppercase tracking-wider">ข้อมูลนักเรียน</p>
-                          <h3 className="text-2xl font-bold text-slate-800">{foundStudent.name}</h3>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                          <p className="text-xs text-slate-400 font-bold uppercase">รหัสประจำตัว</p>
-                          <p className="font-bold text-slate-700">{foundStudent.studentId}</p>
-                        </div>
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                          <p className="text-xs text-slate-400 font-bold uppercase">เลขที่</p>
-                          <p className="font-bold text-slate-700">{foundStudent.no}</p>
-                        </div>
-                      </div>
+                  <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl overflow-hidden relative">
+                    <div className="absolute top-0 right-0 p-8">
+                       <GraduationCap className="w-24 h-24 text-slate-50 opacity-60" />
                     </div>
 
-                    <div className="flex flex-col items-center justify-center bg-indigo-50/50 rounded-3xl p-6 border border-indigo-100">
-                      <p className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-1">เกรดเฉลี่ยปัจจุบัน</p>
-                      <div className="text-6xl font-black text-indigo-600 mb-2">
-                        {getGrade(calculateTotal(foundStudent))}
-                      </div>
-                      <p className="text-sm text-indigo-400 font-medium">คะแนนรวม {calculateTotal(foundStudent)} / 100</p>
-                    </div>
-                  </div>
-
-                    {/* Assignment Status */}
-                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
-                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                        <FileText className="w-6 h-6 text-indigo-600" />
-                        สรุปคะแนนงานทั้งหมด
-                      </h3>
-                      
-                      {/* Manual Entry Scores */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {[1, 2, 3].map(num => {
-                          const key = `assignment${num}` as 'assignment1' | 'assignment2' | 'assignment3';
-                          const score = foundStudent[key] || { part1: 0, part2: 0, part3: 0 };
-                          const sum = (score.part1 || 0) + (score.part2 || 0) + (score.part3 || 0);
-                          return (
-                            <div key={num} className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex flex-col gap-4">
-                              <div className="flex justify-between items-center">
-                                <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">งานที่ {num} (ในห้องเรียน)</p>
-                                <p className="text-sm font-black text-slate-700">{sum} <span className="text-xs text-slate-400 font-normal">/ 15</span></p>
-                              </div>
-                              <div className="grid grid-cols-3 gap-2">
-                                {[1, 2, 3].map(pIdx => {
-                                  const pKey = `part${pIdx}` as keyof SubScores;
-                                  const exNum = (num - 1) * 3 + pIdx;
-                                  return (
-                                    <div key={pIdx} className="bg-white p-2 rounded-xl border border-slate-100 text-center">
-                                      <p className="text-[8px] font-bold text-slate-400 uppercase mb-1">แบบฝึกหัดที่ {exNum}</p>
-                                      <p className="text-sm font-bold text-slate-700">{score[pKey] || 0}</p>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
+                    <div className="flex flex-col md:flex-row items-start md:items-center gap-8 relative">
+                      <div className="w-24 h-24 bg-gradient-to-br from-indigo-500 to-indigo-700 text-white rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-indigo-200 relative group transition-transform hover:scale-105">
+                        <User className="w-10 h-10" />
+                        <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-2 rounded-2xl shadow-lg ring-4 ring-white">
+                          <CheckCircle2 className="w-4 h-4" />
+                        </div>
                       </div>
 
-                      <div className="pt-6 border-t border-slate-100">
-                        <h4 className="text-sm font-bold text-slate-500 mb-4">งานที่มอบหมายระบบออนไลน์</h4>
-                        <div className="grid grid-cols-1 gap-4">
-                      {(appData.assignments || []).filter(a => {
-                        // Find which course this student belongs to
-                        // For simplicity, we assume the student is in the currently selected class/subject if they were found
-                        // But better to check all courses
-                        return true; // Show all for now, or filter by student's course
-                      }).map(assignment => {
-                        const submission = appData.submissions.find(s => s.assignmentId === assignment.id && s.studentId === foundStudent.studentId);
-                        const isDone = !!submission;
-                        const uploading = isUploading[assignment.id];
-
-                        return (
-                          <div key={assignment.id} className="flex flex-col md:flex-row md:items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-100 gap-4">
-                            <div className="flex items-start gap-4">
-                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                                isDone ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
-                              }`}>
-                                {isDone ? <CheckCircle2 className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
-                              </div>
-                              <div className="space-y-1">
-                                <h4 className="font-bold text-slate-800">{assignment.title}</h4>
-                                <p className="text-sm text-slate-500">{assignment.description}</p>
-                                {isDone && (
-                                  <div className="flex items-center gap-2 mt-2">
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                                      submission.status === 'graded' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
-                                    }`}>
-                                      {submission.status === 'graded' ? `คะแนน: ${submission.score} / ${assignment.maxScore}` : 'รอการตรวจ'}
-                                    </span>
-                                    <a href={submission.fileUrl} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:underline flex items-center gap-1">
-                                      <ExternalLink className="w-3 h-3" /> ดูไฟล์ที่ส่ง
-                                    </a>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                              {!isDone ? (
-                                <label className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all cursor-pointer ${
-                                  uploading ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                                }`}>
-                                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                                  {uploading ? 'กำลังอัปโหลด...' : 'ส่งงาน (Upload)'}
-                                  <input 
-                                    type="file" 
-                                    className="hidden" 
-                                    disabled={uploading}
-                                    onChange={(e) => handleStudentFileUpload(e, assignment.id, foundStudent)} 
-                                  />
-                                </label>
-                              ) : (
-                                <button className="px-6 py-3 rounded-xl font-bold text-sm bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default flex items-center gap-2">
-                                  <CheckCircle2 className="w-4 h-4" />
-                                  ส่งงานแล้ว
-                                </button>
-                              )}
-                            </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">Authenticated Student</p>
+                        <h3 className="text-4xl font-black text-slate-800 leading-tight tracking-tight">{foundStudent.name}</h3>
+                        <div className="flex flex-wrap items-center gap-4 mt-3">
+                          <div className="flex items-center gap-3 bg-slate-100/80 px-4 py-2 rounded-2xl border border-slate-200/50">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ID</span>
+                            <span className="text-sm font-black text-slate-700 leading-none">{foundStudent.studentId}</span>
                           </div>
-                        );
-                      })}
-                      {(appData.assignments || []).length === 0 && (
-                        <p className="text-center text-slate-400 py-8">ยังไม่มีงานที่ได้รับมอบหมาย</p>
-                      )}
+                          <div className="flex items-center gap-3 bg-slate-100/80 px-4 py-2 rounded-2xl border border-slate-200/50">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NO</span>
+                            <span className="text-sm font-black text-slate-700 leading-none">{foundStudent.no}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex-1" />
+
+                      <div className="bg-white border-2 border-indigo-50 p-8 rounded-[3rem] shadow-2xl shadow-indigo-100/50 w-full md:w-auto text-center relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-emerald-500" />
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Grade Status</p>
+                        <div className="text-7xl font-black bg-gradient-to-br from-indigo-600 to-indigo-800 bg-clip-text text-transparent mb-1">
+                          {getGrade(calculateTotal(foundStudent))}
+                        </div>
+                        <div className="flex items-center justify-center gap-2">
+                           <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{calculateTotal(foundStudent)} / 100 PTS</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </motion.div>
+
+                  {/* Summary Bento Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                    {/* Individual Exercises Card */}
+                    <div className="md:col-span-8 bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl space-y-8">
+                       <div className="flex items-center justify-between">
+                         <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                           <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                             <FileText className="w-6 h-6" />
+                           </div>
+                           คะแนนแบบฝึกหัด
+                         </h3>
+                         <span className="text-sm font-bold text-slate-400 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
+                           ทั้งหมด {(foundStudent.assignment1?.part1 || 0) + (foundStudent.assignment1?.part2 || 0) + (foundStudent.assignment1?.part3 || 0) + 
+                                  (foundStudent.assignment2?.part1 || 0) + (foundStudent.assignment2?.part2 || 0) + (foundStudent.assignment2?.part3 || 0) +
+                                  (foundStudent.assignment3?.part1 || 0) + (foundStudent.assignment3?.part2 || 0) + (foundStudent.assignment3?.part3 || 0)} / 45
+                         </span>
+                       </div>
+
+                       <div className="space-y-6">
+                         {[1, 2, 3].map(num => {
+                           const key = `assignment${num}` as 'assignment1' | 'assignment2' | 'assignment3';
+                           const score = foundStudent[key] || { part1: 0, part2: 0, part3: 0 };
+                           return (
+                             <div key={num} className="bg-slate-50/50 p-6 rounded-[2.5rem] border border-slate-100/80">
+                               <div className="flex justify-between items-center mb-4 px-2">
+                                 <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">ชุดที่ {num}</p>
+                                 <div className="h-px flex-1 mx-4 bg-slate-200" />
+                                 <p className="text-sm font-black text-indigo-600">{(score.part1 || 0) + (score.part2 || 0) + (score.part3 || 0)} / 15</p>
+                               </div>
+                               <div className="grid grid-cols-3 gap-3">
+                                 {[1, 2, 3].map(pIdx => {
+                                   const pKey = `part${pIdx}` as keyof SubScores;
+                                   const exNum = (num - 1) * 3 + pIdx;
+                                   return (
+                                     <div key={pIdx} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center group hover:border-indigo-200 transition-all">
+                                       <p className="text-[9px] font-black text-slate-300 uppercase mb-2 group-hover:text-indigo-400 transition-colors">EX {exNum}</p>
+                                       <p className="text-2xl font-black text-slate-700">{score[pKey] || 0}</p>
+                                     </div>
+                                   );
+                                 })}
+                               </div>
+                             </div>
+                           );
+                         })}
+                       </div>
+                    </div>
+
+                    {/* Online Assignments Card */}
+                    <div className="md:col-span-4 space-y-6">
+                      <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl h-full flex flex-col">
+                        <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8">
+                          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-2xl">
+                            <Upload className="w-6 h-6" />
+                          </div>
+                          งานออนไลน์
+                        </h3>
+
+                        <div className="space-y-4 flex-1">
+                          {(appData.assignments || []).map(assignment => {
+                            const submission = appData.submissions.find(s => s.assignmentId === assignment.id && s.studentId === foundStudent.studentId);
+                            const isDone = !!submission;
+                            const uploading = isUploading[assignment.id];
+
+                            return (
+                              <div key={assignment.id} className={`p-6 rounded-[2.5rem] border transition-all ${
+                                isDone ? 'bg-emerald-50/50 border-emerald-100' : 'bg-slate-50 border-slate-100 hover:border-indigo-100'
+                              }`}>
+                                <div className="space-y-4">
+                                  <div>
+                                    <h4 className="font-black text-slate-800 leading-tight mb-1">{assignment.title}</h4>
+                                    <p className="text-[10px] font-bold text-slate-400 line-clamp-2">{assignment.description}</p>
+                                  </div>
+
+                                  {isDone ? (
+                                    <div className="space-y-3">
+                                      <div className="flex items-center justify-between text-xs font-bold">
+                                        <span className="text-emerald-600 flex items-center gap-1.5">
+                                          <CheckCircle2 className="w-3.5 h-3.5" /> ส่งแล้ว
+                                        </span>
+                                        <span className="text-slate-400">{submission.status === 'graded' ? `${submission.score}/${assignment.maxScore}` : 'รอตรวจ'}</span>
+                                      </div>
+                                      <a 
+                                        href={submission.fileUrl} target="_blank" rel="noreferrer" 
+                                        className="block w-full text-center py-3 bg-white text-emerald-600 rounded-2xl border border-emerald-100 text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors"
+                                      >
+                                        View Submission
+                                      </a>
+                                    </div>
+                                  ) : (
+                                    <label className={`block w-full text-center py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer ${
+                                      uploading ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'
+                                    }`}>
+                                      {uploading ? 'Uploading...' : 'ส่งงานตอนนี้'}
+                                      <input 
+                                        type="file" 
+                                        className="hidden" 
+                                        disabled={uploading}
+                                        onChange={(e) => handleStudentFileUpload(e, assignment.id, foundStudent)} 
+                                      />
+                                    </label>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {(appData.assignments || []).length === 0 && (
+                            <div className="text-center py-12">
+                              <div className="w-16 h-16 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200 text-slate-300">
+                                <Clock className="w-8 h-8" />
+                              </div>
+                              <p className="text-sm font-bold text-slate-400">ยังไม่มีงานออนไลน์</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
             ) : searchId && (
               <motion.div 
                 initial={{ opacity: 0 }}
