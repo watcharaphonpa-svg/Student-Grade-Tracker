@@ -3,7 +3,8 @@ import {
   Plus, Trash2, Save, Users, Calculator, GraduationCap, 
   ChevronRight, ChevronDown, Info, Cloud, CloudCheck, ExternalLink, 
   Loader2, Search, FileText, CheckCircle2, Clock, User, Upload, 
-  BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle
+  BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle,
+  Link, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -226,6 +227,16 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [spreadsheetUrl, setSpreadsheetUrl] = useState<string | null>(null);
   const [view, setView] = useState<'teacher' | 'student'>('teacher');
+  const [isLockedStudentView, setIsLockedStudentView] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('portal') === 'student') {
+      setView('student');
+      setIsLockedStudentView(true);
+    }
+  }, []);
+
   const [teacherTab, setTeacherTab] = useState<'grades' | 'assignments' | 'submissions'>('grades');
 
   // Student Portal State
@@ -652,42 +663,46 @@ export default function App() {
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
-            {user ? (
-              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
-                <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-6 h-6 rounded-full" />
-                <span className="text-sm font-medium hidden sm:inline">{user.displayName}</span>
-                <button onClick={() => auth.signOut()} className="text-xs text-slate-400 hover:text-red-500 transition-colors">ออกระบบ</button>
-              </div>
-            ) : (
-              <button 
-                onClick={handleFirebaseLogin}
-                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-all shadow-sm"
-              >
-                <User className="w-4 h-4" />
-                เข้าสู่ระบบครู
-              </button>
-            )}
+            {!isLockedStudentView && (
+              <>
+                {user ? (
+                  <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
+                    <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-6 h-6 rounded-full" />
+                    <span className="text-sm font-medium hidden sm:inline">{user.displayName}</span>
+                    <button onClick={() => auth.signOut()} className="text-xs text-slate-400 hover:text-red-500 transition-colors">ออกระบบ</button>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={handleFirebaseLogin}
+                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-all shadow-sm"
+                  >
+                    <User className="w-4 h-4" />
+                    เข้าสู่ระบบครู
+                  </button>
+                )}
 
-            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-              <button 
-                onClick={() => setView('teacher')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                view === 'teacher' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              สำหรับครู
-            </button>
-            <button 
-              onClick={() => setView('student')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                view === 'student' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <User className="w-4 h-4" />
-              สำหรับนักเรียน
-            </button>
-          </div>
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  <button 
+                    onClick={() => setView('teacher')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                    view === 'teacher' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  สำหรับครู
+                </button>
+                <button 
+                  onClick={() => setView('student')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                    view === 'student' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <User className="w-4 h-4" />
+                  สำหรับนักเรียน
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
           {view === 'teacher' && (
@@ -794,6 +809,20 @@ export default function App() {
               >
                 <Plus className="w-5 h-5" />
                 เพิ่มนักเรียน
+              </button>
+
+              <button 
+                onClick={() => {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('portal', 'student');
+                  navigator.clipboard.writeText(url.toString());
+                  alert('คัดลอกลิงก์สำหรับนักเรียนเรียบร้อยแล้ว!\nนักเรียนจะเห็นเฉพาะเมนูค้นหาคะแนนเท่านั้น');
+                }}
+                className="flex items-center gap-2 bg-white hover:bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
+                title="คัดลอกลิงก์สำหรับส่งให้นักเรียน"
+              >
+                <Link className="w-5 h-5" />
+                ลิงก์สำหรับนักเรียน
               </button>
 
               <label 
