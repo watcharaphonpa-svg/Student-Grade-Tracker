@@ -51,6 +51,8 @@ interface Assignment {
   description: string;
   maxScore: number;
   courseKey: string;
+  targetAssignment?: number;
+  targetPart?: number;
 }
 
 interface Submission {
@@ -93,23 +95,17 @@ const MAX_SCORES = {
 };
 
 // --- Helpers ---
-const calculateTotal = (student: Student, submissions: Submission[] = []): number => {
+const calculateTotal = (student: Student): number => {
   const a1 = (student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0);
   const a2 = (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0);
   const a3 = (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0);
   
-  // Also add scores from digital submissions
-  const submissionScores = (submissions || [])
-    .filter(sub => sub.studentId === student.studentId && sub.status === 'graded')
-    .reduce((total, sub) => total + (Number(sub.score) || 0), 0);
-
   return (
     (student.behavior || 0) +
     (student.attendance || 0) +
     a1 + a2 + a3 +
     (student.midterm || 0) +
-    (student.final || 0) +
-    submissionScores
+    (student.final || 0)
   );
 };
 
@@ -206,6 +202,8 @@ export default function App() {
   const [newItemName, setNewItemName] = useState('');
   const [newAssignmentDesc, setNewAssignmentDesc] = useState('');
   const [newAssignmentScore, setNewAssignmentScore] = useState(10);
+  const [newTargetAssignment, setNewTargetAssignment] = useState(1);
+  const [newTargetPart, setNewTargetPart] = useState(1);
 
   const currentCourseKey = `${selectedSubjectId}-${selectedClassId}`;
   const students = useMemo(() => (appData.courses || {})[currentCourseKey] || [], [appData.courses, currentCourseKey]);
@@ -421,7 +419,7 @@ export default function App() {
 
   const stats = useMemo(() => {
     if (students.length === 0) return { avg: 0, passRate: 0 };
-    const totals = students.map(s => calculateTotal(s, appData.submissions));
+    const totals = students.map(s => calculateTotal(s));
     const avg = totals.reduce((a, b) => a + b, 0) / students.length;
     const passCount = totals.filter(t => t >= 50).length;
     return {
@@ -492,12 +490,16 @@ export default function App() {
       title: newItemName.trim(),
       description: newAssignmentDesc.trim(),
       maxScore: newAssignmentScore,
-      courseKey: currentCourseKey
+      courseKey: currentCourseKey,
+      targetAssignment: newTargetAssignment,
+      targetPart: newTargetPart
     };
     await setDoc(doc(db, 'assignments', id), newAssignment);
     setNewItemName('');
     setNewAssignmentDesc('');
     setNewAssignmentScore(10);
+    setNewTargetAssignment(1);
+    setNewTargetPart(1);
   };
 
   const removeAssignment = async (id: string) => {
@@ -573,7 +575,29 @@ export default function App() {
   };
 
   const updateSubmissionScore = async (submissionId: string, score: number) => {
+    // 1. Update the submission status/score
     await updateDoc(doc(db, 'submissions', submissionId), { score, status: 'graded' });
+
+    // 2. Find the submission in state to get meta info
+    const submission = appData.submissions.find(s => s.id === submissionId);
+    if (!submission) return;
+
+    // 3. Find the assignment to know where to map the score
+    const assignment = appData.assignments.find(a => a.id === submission.assignmentId);
+    if (!assignment || !assignment.targetAssignment || !assignment.targetPart) return;
+
+    // 4. Update the student's manual field
+    const q = query(collection(db, 'students'), where('studentId', '==', submission.studentId));
+    const snap = await getDocs(q);
+    
+    if (!snap.empty) {
+      const studentDoc = snap.docs[0];
+      const fieldPath = `assignment${assignment.targetAssignment}.part${assignment.targetPart}`;
+      await updateDoc(studentDoc.ref, {
+        [fieldPath]: score
+      });
+      console.log(`Mapped score ${score} to student ${submission.studentId} field ${fieldPath}`);
+    }
   };
 
   const removeSubject = async (id: string) => {
@@ -851,7 +875,7 @@ export default function App() {
                       <tbody className="divide-y divide-slate-100">
                         <AnimatePresence initial={false}>
                           {students.map((student) => {
-                            const total = calculateTotal(student, appData.submissions);
+                            const total = calculateTotal(student);
                             const grade = getGrade(total);
                             const isExp = isExpanded[student.id];
 
@@ -913,13 +937,9 @@ export default function App() {
                                       className="flex items-center justify-center gap-1 mx-auto bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-sm font-semibold hover:bg-indigo-100 transition-colors"
                                     >
                                       {(() => {
-                                        const manualSum = (student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0) +
-                                                         (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0) +
-                                                         (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0);
-                                        const digitalSum = (appData.submissions || [])
-                                          .filter(s => s.studentId === student.studentId && s.status === 'graded')
-                                          .reduce((acc, s) => acc + (Number(s.score) || 0), 0);
-                                        return manualSum + digitalSum;
+                                        return (student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0) +
+                                               (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0) +
+                                               (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0);
                                       })()}
                                       {isExp ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                     </button>
@@ -1012,14 +1032,8 @@ export default function App() {
                                           <div className="flex items-center justify-between mb-4">
                                             <h4 className="text-sm font-bold text-slate-500 flex items-center gap-2">
                                               <Monitor className="w-4 h-4 text-indigo-500" />
-                                              งานที่มอบหมายระบบออนไลน์ (ตรวจแล้ว)
+                                              งานที่มอบหมายระบบออนไลน์
                                             </h4>
-                                            <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full">
-                                              คะแนนรวมออนไลน์: {(appData.submissions || [])
-                                                .filter(s => s.studentId === student.studentId && s.status === 'graded')
-                                                .reduce((acc, s) => acc + (Number(s.score) || 0), 0)
-                                              }
-                                            </span>
                                           </div>
                                           
                                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -1128,6 +1142,33 @@ export default function App() {
                       />
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-600">เก็บคะแนนในช่อง (งานที่)</label>
+                      <select 
+                        value={newTargetAssignment}
+                        onChange={(e) => setNewTargetAssignment(Number(e.target.value))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                      >
+                        <option value={1}>งานที่ 1</option>
+                        <option value={2}>งานที่ 2</option>
+                        <option value={3}>งานที่ 3</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-600">ส่วนที่</label>
+                      <select 
+                        value={newTargetPart}
+                        onChange={(e) => setNewTargetPart(Number(e.target.value))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                      >
+                        <option value={1}>ส่วนที่ 1</option>
+                        <option value={2}>ส่วนที่ 2</option>
+                        <option value={3}>ส่วนที่ 3</option>
+                      </select>
+                    </div>
+                  </div>
                   
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-600">รายละเอียด / คำสั่ง</label>
@@ -1157,10 +1198,13 @@ export default function App() {
                           <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-indigo-600 border border-slate-200 shadow-sm">
                             <FileText className="w-6 h-6" />
                           </div>
-                          <div>
+                          <div className="flex flex-col">
                             <p className="font-bold text-slate-800 text-lg">{a.title}</p>
                             <div className="flex items-center gap-4 text-sm text-slate-500">
                               <span className="flex items-center gap-1 font-medium">คะแนนเต็ม: <span className="text-indigo-600">{a.maxScore}</span></span>
+                              <span className="flex items-center gap-1 bg-indigo-50 px-2 py-0.5 rounded text-indigo-600 text-xs font-bold">
+                                ลงช่อง: งานที่ {a.targetAssignment || 1} ส่วนที่ {a.targetPart || 1}
+                              </span>
                               {a.description && <span className="border-l border-slate-300 pl-4">{a.description}</span>}
                             </div>
                           </div>
@@ -1358,9 +1402,9 @@ export default function App() {
                     <div className="flex flex-col items-center justify-center bg-indigo-50/50 rounded-3xl p-6 border border-indigo-100">
                       <p className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-1">เกรดเฉลี่ยปัจจุบัน</p>
                       <div className="text-6xl font-black text-indigo-600 mb-2">
-                        {getGrade(calculateTotal(foundStudent, appData.submissions))}
+                        {getGrade(calculateTotal(foundStudent))}
                       </div>
-                      <p className="text-sm text-indigo-400 font-medium">คะแนนรวม {calculateTotal(foundStudent, appData.submissions)} / 100</p>
+                      <p className="text-sm text-indigo-400 font-medium">คะแนนรวม {calculateTotal(foundStudent)} / 100</p>
                     </div>
                   </div>
 

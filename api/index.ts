@@ -136,8 +136,8 @@ app.post("/api/sheets/sync", async (req, res) => {
       s.assignment2?.part1 || 0, s.assignment2?.part2 || 0, s.assignment2?.part3 || 0,
       s.assignment3?.part1 || 0, s.assignment3?.part2 || 0, s.assignment3?.part3 || 0,
       s.midterm || 0, s.final || 0,
-      calculateTotal(s, submissions),
-      getGrade(calculateTotal(s, submissions))
+      calculateTotal(s),
+      getGrade(calculateTotal(s))
     ]);
 
     await sheets.spreadsheets.values.update({
@@ -174,16 +174,12 @@ app.post("/api/drive/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-function calculateTotal(s: any, submissions: any[] = []) {
+function calculateTotal(s: any) {
   const a1 = (s.assignment1?.part1 || 0) + (s.assignment1?.part2 || 0) + (s.assignment1?.part3 || 0);
   const a2 = (s.assignment2?.part1 || 0) + (s.assignment2?.part2 || 0) + (s.assignment2?.part3 || 0);
   const a3 = (s.assignment3?.part1 || 0) + (s.assignment3?.part2 || 0) + (s.assignment3?.part3 || 0);
   
-  const subScores = (submissions || [])
-    .filter((sub: any) => sub.studentId === s.studentId && sub.status === 'graded')
-    .reduce((acc: number, sub: any) => acc + (Number(sub.score) || 0), 0);
-
-  return (s.behavior || 0) + (s.attendance || 0) + a1 + a2 + a3 + (s.midterm || 0) + (s.final || 0) + subScores;
+  return (s.behavior || 0) + (s.attendance || 0) + a1 + a2 + a3 + (s.midterm || 0) + (s.final || 0);
 }
 
 function getGrade(t: number) {
