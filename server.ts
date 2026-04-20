@@ -25,28 +25,28 @@ export default app;
 const oauth2Client = new google.auth.OAuth2();
 
 function getOAuth2Client(req: express.Request) {
-  const clientId = (process.env.GOOGLE_CLIENT_ID || "").trim();
-  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
+  let clientId = (process.env.GOOGLE_CLIENT_ID || "").trim();
+  let clientSecret = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
   
-  // Try to determine the redirect URI dynamically if not set in ENV
-  let redirectUri = process.env.GOOGLE_REDIRECT_URI;
-  if (!redirectUri) {
-    const protocol = req.headers["x-forwarded-proto"] || "http";
-    const host = req.headers.host;
-    redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+  // Clean up user typos in APP_URL if they exist
+  let appUrl = (process.env.APP_URL || "").trim().replace(/[()]/g, "");
+  if (appUrl && appUrl.startsWith("https:/") && !appUrl.startsWith("https://")) {
+    appUrl = appUrl.replace("https:/", "https://");
   }
 
-  oauth2Client.setCredentials({
-    // We only need the client config here for generating URLs
-  });
-  
-  // Note: oauth2Client constructor parameters are preferred for full functionality
-  // but we can update the config dynamically
-  (oauth2Client as any)._clientId = clientId;
-  (oauth2Client as any)._clientSecret = clientSecret;
-  (oauth2Client as any).redirectUri = redirectUri;
-  
-  return oauth2Client;
+  // Determine the redirect URI
+  let redirectUri = (process.env.GOOGLE_REDIRECT_URI || "").trim();
+  if (!redirectUri) {
+    if (appUrl) {
+      redirectUri = `${appUrl}/api/auth/google/callback`;
+    } else {
+      const protocol = req.headers["x-forwarded-proto"] || "https";
+      const host = req.headers.host;
+      redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+    }
+  }
+
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
 const SCOPES = [
@@ -150,7 +150,13 @@ app.post("/api/sheets/sync", async (req, res) => {
     return res.status(401).json({ error: "Not authenticated" });
   }
 
-  const tokens = JSON.parse(tokensStr);
+  let tokens;
+  try {
+    tokens = JSON.parse(tokensStr);
+  } catch (e) {
+    return res.status(400).json({ error: "Invalid session. Please logout and login again." });
+  }
+
   const client = getOAuth2Client(req);
   client.setCredentials(tokens);
 
@@ -189,12 +195,12 @@ app.post("/api/sheets/sync", async (req, res) => {
     ];
 
     const rows = students.map((s: any) => [
-      s.no, s.studentId, s.name,
-      s.behavior, s.attendance,
-      s.assignment1.part1, s.assignment1.part2, s.assignment1.part3,
-      s.assignment2.part1, s.assignment2.part2, s.assignment2.part3,
-      s.assignment3.part1, s.assignment3.part2, s.assignment3.part3,
-      s.midterm, s.final,
+      s.no || "", s.studentId || "", s.name || "",
+      s.behavior || 0, s.attendance || 0,
+      s.assignment1?.part1 || 0, s.assignment1?.part2 || 0, s.assignment1?.part3 || 0,
+      s.assignment2?.part1 || 0, s.assignment2?.part2 || 0, s.assignment2?.part3 || 0,
+      s.assignment3?.part1 || 0, s.assignment3?.part2 || 0, s.assignment3?.part3 || 0,
+      s.midterm || 0, s.final || 0,
       calculateTotal(s),
       getGrade(calculateTotal(s))
     ]);
@@ -232,7 +238,13 @@ app.post("/api/drive/upload", upload.single("file"), async (req, res) => {
     return res.status(400).json({ error: "No file uploaded" });
   }
 
-  const tokens = JSON.parse(tokensStr);
+  let tokens;
+  try {
+    tokens = JSON.parse(tokensStr);
+  } catch (e) {
+    return res.status(400).json({ error: "Invalid session" });
+  }
+
   const client = getOAuth2Client(req);
   client.setCredentials(tokens);
 
