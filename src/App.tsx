@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Save, Users, Calculator, GraduationCap, 
   ChevronRight, ChevronDown, Info, Cloud, CloudCheck, ExternalLink, 
   Loader2, Search, FileText, CheckCircle2, Clock, User, Upload, 
-  BookOpen, Settings, X, Menu, LayoutDashboard
+  BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -912,9 +912,15 @@ export default function App() {
                                       onClick={() => toggleExpand(student.id)}
                                       className="flex items-center justify-center gap-1 mx-auto bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-sm font-semibold hover:bg-indigo-100 transition-colors"
                                     >
-                                      {((student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0) +
-                                       (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0) +
-                                       (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0))}
+                                      {(() => {
+                                        const manualSum = (student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0) +
+                                                         (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0) +
+                                                         (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0);
+                                        const digitalSum = (appData.submissions || [])
+                                          .filter(s => s.studentId === student.studentId && s.status === 'graded')
+                                          .reduce((acc, s) => acc + (Number(s.score) || 0), 0);
+                                        return manualSum + digitalSum;
+                                      })()}
                                       {isExp ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                     </button>
                                   </td>
@@ -999,6 +1005,60 @@ export default function App() {
                                               </div>
                                             );
                                           })}
+                                        </div>
+
+                                        {/* Digital Assignments Section */}
+                                        <div className="mt-8 pt-6 border-t border-slate-100">
+                                          <div className="flex items-center justify-between mb-4">
+                                            <h4 className="text-sm font-bold text-slate-500 flex items-center gap-2">
+                                              <Monitor className="w-4 h-4 text-indigo-500" />
+                                              งานที่มอบหมายระบบออนไลน์ (ตรวจแล้ว)
+                                            </h4>
+                                            <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full">
+                                              คะแนนรวมออนไลน์: {(appData.submissions || [])
+                                                .filter(s => s.studentId === student.studentId && s.status === 'graded')
+                                                .reduce((acc, s) => acc + (Number(s.score) || 0), 0)
+                                              }
+                                            </span>
+                                          </div>
+                                          
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                            {(appData.assignments || []).filter(a => a.courseKey === currentCourseKey).map(assignment => {
+                                              const submission = (appData.submissions || []).find(s => s.assignmentId === assignment.id && s.studentId === student.studentId);
+                                              return (
+                                                <div key={assignment.id} className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 hover:border-indigo-100 transition-all">
+                                                  <div className="flex flex-col h-full justify-between gap-3">
+                                                    <div>
+                                                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1 truncate">{assignment.title}</p>
+                                                      <div className="flex items-baseline gap-1">
+                                                        <span className="text-xl font-black text-slate-700">
+                                                          {submission?.status === 'graded' ? submission.score : 0}
+                                                        </span>
+                                                        <span className="text-xs text-slate-400">/ {assignment.maxScore}</span>
+                                                      </div>
+                                                    </div>
+                                                    
+                                                    {!submission ? (
+                                                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1 w-fit">
+                                                        <Clock className="w-2.5 h-2.5" /> ยังไม่ส่ง
+                                                      </span>
+                                                    ) : submission.status === 'pending' ? (
+                                                      <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded flex items-center gap-1 w-fit">
+                                                        <AlertCircle className="w-2.5 h-2.5" /> รอตรวจ
+                                                      </span>
+                                                    ) : (
+                                                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded flex items-center gap-1 w-fit">
+                                                        <CheckCircle2 className="w-2.5 h-2.5" /> ตรวจแล้ว
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                            {(appData.assignments || []).filter(a => a.courseKey === currentCourseKey).length === 0 && (
+                                              <p className="text-xs text-slate-400 col-span-full">ทำรายการมอบหมายงานออนไลน์ที่แถบเมนู "จัดการงานมอบหมาย"</p>
+                                            )}
+                                          </div>
                                         </div>
                                       </td>
                                     </motion.tr>
@@ -1304,13 +1364,31 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Assignment Status */}
-                  <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
-                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                      <FileText className="w-6 h-6 text-indigo-600" />
-                      งานที่ได้รับมอบหมาย
-                    </h3>
-                    <div className="grid grid-cols-1 gap-4">
+                    {/* Assignment Status */}
+                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <FileText className="w-6 h-6 text-indigo-600" />
+                        สรุปคะแนนงานทั้งหมด
+                      </h3>
+                      
+                      {/* Manual Entry Scores */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {[1, 2, 3].map(num => {
+                          const key = `assignment${num}` as 'assignment1' | 'assignment2' | 'assignment3';
+                          const score = foundStudent[key] || { part1: 0, part2: 0, part3: 0 };
+                          const sum = (score.part1 || 0) + (score.part2 || 0) + (score.part3 || 0);
+                          return (
+                            <div key={num} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">งานที่ {num} (ในห้องเรียน)</p>
+                              <p className="text-xl font-black text-slate-700">{sum} <span className="text-xs text-slate-400 font-normal">/ 15</span></p>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="pt-6 border-t border-slate-100">
+                        <h4 className="text-sm font-bold text-slate-500 mb-4">งานที่มอบหมายระบบออนไลน์</h4>
+                        <div className="grid grid-cols-1 gap-4">
                       {(appData.assignments || []).filter(a => {
                         // Find which course this student belongs to
                         // For simplicity, we assume the student is in the currently selected class/subject if they were found
@@ -1376,23 +1454,24 @@ export default function App() {
                       )}
                     </div>
                   </div>
-                </motion.div>
-              ) : searchId && (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-center p-12 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4"
-                >
-                  <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
-                    <Search className="w-10 h-10" />
-                  </div>
-                  <div className="space-y-1">
-                    <h3 className="text-xl font-bold text-slate-800">ไม่พบข้อมูลนักเรียน</h3>
-                    <p className="text-slate-500">กรุณาตรวจสอบรหัสประจำตัวอีกครั้ง หรือติดต่ออาจารย์ผู้สอน</p>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+              </motion.div>
+            ) : searchId && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-center p-12 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4"
+              >
+                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                  <Search className="w-10 h-10" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-xl font-bold text-slate-800">ไม่พบข้อมูลนักเรียน</h3>
+                  <p className="text-slate-500">กรุณาตรวจสอบรหัสประจำตัวอีกครั้ง หรือติดต่ออาจารย์ผู้สอน</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           </div>
         )}
 
