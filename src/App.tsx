@@ -1011,7 +1011,7 @@ export default function App() {
                                                 <div className="grid grid-cols-3 gap-2">
                                                   {['part1', 'part2', 'part3'].map((part, idx) => (
                                                     <div key={part} className="space-y-1">
-                                                      <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">ส่วน {idx + 1}</label>
+                                                      <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">แบบฝึกหัดที่ {(num - 1) * 3 + (idx + 1)}</label>
                                                       <input 
                                                         type="number"
                                                         max={5}
@@ -1157,15 +1157,15 @@ export default function App() {
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-bold text-slate-600">ส่วนที่</label>
+                      <label className="text-sm font-bold text-slate-600">แบบฝึกหัดที่</label>
                       <select 
                         value={newTargetPart}
                         onChange={(e) => setNewTargetPart(Number(e.target.value))}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
                       >
-                        <option value={1}>ส่วนที่ 1</option>
-                        <option value={2}>ส่วนที่ 2</option>
-                        <option value={3}>ส่วนที่ 3</option>
+                        <option value={1}>แบบฝึกหัดที่ {(newTargetAssignment - 1) * 3 + 1}</option>
+                        <option value={2}>แบบฝึกหัดที่ {(newTargetAssignment - 1) * 3 + 2}</option>
+                        <option value={3}>แบบฝึกหัดที่ {(newTargetAssignment - 1) * 3 + 3}</option>
                       </select>
                     </div>
                   </div>
@@ -1203,7 +1203,7 @@ export default function App() {
                             <div className="flex items-center gap-4 text-sm text-slate-500">
                               <span className="flex items-center gap-1 font-medium">คะแนนเต็ม: <span className="text-indigo-600">{a.maxScore}</span></span>
                               <span className="flex items-center gap-1 bg-indigo-50 px-2 py-0.5 rounded text-indigo-600 text-xs font-bold">
-                                ลงช่อง: งานที่ {a.targetAssignment || 1} ส่วนที่ {a.targetPart || 1}
+                                ลงช่อง: งานที่ {a.targetAssignment || 1} แบบฝึกหัดที่ {((a.targetAssignment || 1) - 1) * 3 + (a.targetPart || 1)}
                               </span>
                               {a.description && <span className="border-l border-slate-300 pl-4">{a.description}</span>}
                             </div>
@@ -1422,9 +1422,23 @@ export default function App() {
                           const score = foundStudent[key] || { part1: 0, part2: 0, part3: 0 };
                           const sum = (score.part1 || 0) + (score.part2 || 0) + (score.part3 || 0);
                           return (
-                            <div key={num} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">งานที่ {num} (ในห้องเรียน)</p>
-                              <p className="text-xl font-black text-slate-700">{sum} <span className="text-xs text-slate-400 font-normal">/ 15</span></p>
+                            <div key={num} className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex flex-col gap-4">
+                              <div className="flex justify-between items-center">
+                                <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">งานที่ {num} (ในห้องเรียน)</p>
+                                <p className="text-sm font-black text-slate-700">{sum} <span className="text-xs text-slate-400 font-normal">/ 15</span></p>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                {[1, 2, 3].map(pIdx => {
+                                  const pKey = `part${pIdx}` as keyof SubScores;
+                                  const exNum = (num - 1) * 3 + pIdx;
+                                  return (
+                                    <div key={pIdx} className="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                      <p className="text-[8px] font-bold text-slate-400 uppercase mb-1">แบบฝึกหัดที่ {exNum}</p>
+                                      <p className="text-sm font-bold text-slate-700">{score[pKey] || 0}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           );
                         })}
