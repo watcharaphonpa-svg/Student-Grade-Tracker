@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
@@ -23,11 +22,32 @@ app.use(cookieParser());
 // Export app for serverless environments (like Vercel)
 export default app;
 
-const oauth2Client = new google.auth.OAuth2(
-  (process.env.GOOGLE_CLIENT_ID || "").trim(),
-  (process.env.GOOGLE_CLIENT_SECRET || "").trim(),
-  (process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_URL}/auth/google/callback`).trim()
-);
+const oauth2Client = new google.auth.OAuth2();
+
+function getOAuth2Client(req: express.Request) {
+  const clientId = (process.env.GOOGLE_CLIENT_ID || "").trim();
+  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
+  
+  // Try to determine the redirect URI dynamically if not set in ENV
+  let redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (!redirectUri) {
+    const protocol = req.headers["x-forwarded-proto"] || "http";
+    const host = req.headers.host;
+    redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+  }
+
+  oauth2Client.setCredentials({
+    // We only need the client config here for generating URLs
+  });
+  
+  // Note: oauth2Client constructor parameters are preferred for full functionality
+  // but we can update the config dynamically
+  (oauth2Client as any)._clientId = clientId;
+  (oauth2Client as any)._clientSecret = clientSecret;
+  (oauth2Client as any).redirectUri = redirectUri;
+  
+  return oauth2Client;
+}
 
 const SCOPES = [
   "https://www.googleapis.com/auth/spreadsheets",
@@ -53,19 +73,20 @@ app.get("/api/health", (req, res) => {
 
 app.get("/api/auth/google/url", (req, res) => {
   try {
+    const client = getOAuth2Client(req);
+    
     if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
       return res.status(500).json({ 
-        error: "Missing Google OAuth credentials in Secrets",
-        details: "Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set in AI Studio Secrets."
+        error: "Missing Google OAuth credentials",
+        details: "Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set in your environment variables (AI Studio Secrets or Vercel Environment Variables)."
       });
     }
 
-    const url = oauth2Client.generateAuthUrl({
+    const url = client.generateAuthUrl({
       access_type: "offline",
       scope: SCOPES,
       prompt: "consent",
     });
-    console.log("Generated Auth URL:", url);
     res.json({ url });
   } catch (error: any) {
     console.error("Error generating auth URL:", error);
@@ -76,7 +97,8 @@ app.get("/api/auth/google/url", (req, res) => {
 app.get(["/auth/google/callback", "/auth/google/callback/", "/api/auth/google/callback"], async (req, res) => {
   const { code } = req.query;
   try {
-    const { tokens } = await oauth2Client.getToken(code as string);
+    const client = getOAuth2Client(req);
+    const { tokens } = await client.getToken(code as string);
     
     // Store tokens in a cookie
     res.cookie("google_tokens", JSON.stringify(tokens), {
@@ -129,7 +151,8 @@ app.post("/api/sheets/sync", async (req, res) => {
   }
 
   const tokens = JSON.parse(tokensStr);
-  oauth2Client.setCredentials(tokens);
+  const client = getOAuth2Client(req);
+  client.setCredentials(tokens);
 
   const { students, spreadsheetId, sheetName } = req.body;
 
@@ -210,10 +233,11 @@ app.post("/api/drive/upload", upload.single("file"), async (req, res) => {
   }
 
   const tokens = JSON.parse(tokensStr);
-  oauth2Client.setCredentials(tokens);
+  const client = getOAuth2Client(req);
+  client.setCredentials(tokens);
 
   try {
-    const drive = google.drive({ version: "v3", auth: oauth2Client });
+    const drive = google.drive({ version: "v3", auth: client });
     
     const { studentId, assignmentId, studentName } = req.body;
     console.log('Server: Receiving upload request from:', studentId, studentName);
@@ -271,11 +295,16 @@ function getGrade(total: number) {
 async function startServer() {
   // Only use Vite middleware in local development (AI Studio)
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.error("Failed to start Vite server:", e);
+    }
   } else {
     const distPath = path.join(process.cwd(), "dist");
     if (fs.existsSync(distPath)) {
