@@ -1,0 +1,105 @@
+{
+  "entities": {
+    "Subject": {
+      "title": "Subject",
+      "description": "Educational subject/course",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "ClassRoom": {
+      "title": "ClassRoom",
+      "description": "Student classroom or group",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Assignment": {
+      "title": "Assignment",
+      "description": "Task assigned to students",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "maxScore": { "type": "number" },
+        "courseKey": { "type": "string" }
+      },
+      "required": ["id", "title", "maxScore", "courseKey"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student record with grades",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "no": { "type": "string" },
+        "studentId": { "type": "string" },
+        "name": { "type": "string" },
+        "courseKey": { "type": "string" },
+        "behavior": { "type": "number" },
+        "attendance": { "type": "number" },
+        "assignment1": { "$ref": "#/entities/SubScores" },
+        "assignment2": { "$ref": "#/entities/SubScores" },
+        "assignment3": { "$ref": "#/entities/SubScores" },
+        "midterm": { "type": "number" },
+        "final": { "type": "number" }
+      },
+      "required": ["id", "studentId", "name", "courseKey"]
+    },
+    "SubScores": {
+      "title": "SubScores",
+      "description": "Detailed scores for an assignment",
+      "type": "object",
+      "properties": {
+        "part1": { "type": "number" },
+        "part2": { "type": "number" },
+        "part3": { "type": "number" }
+      }
+    },
+    "Submission": {
+      "title": "Submission",
+      "description": "Student assignment submission",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "assignmentId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "fileName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "graded"] },
+        "score": { "type": "number" },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "assignmentId", "studentId", "fileUrl", "status", "submittedAt"]
+    }
+  },
+  "firestore": {
+    "/subjects/{subjectId}": {
+      "schema": "Subject",
+      "description": "Collection of subjects"
+    },
+    "/classRooms/{classId}": {
+      "schema": "ClassRoom",
+      "description": "Collection of classrooms"
+    },
+    "/assignments/{assignmentId}": {
+      "schema": "Assignment",
+      "description": "Collection of assignments"
+    },
+    "/students/{studentDocId}": {
+      "schema": "Student",
+      "description": "Collection of students across all courses"
+    },
+    "/submissions/{submissionId}": {
+      "schema": "Submission",
+      "description": "Collection of student submissions"
+    }
+  }
+}

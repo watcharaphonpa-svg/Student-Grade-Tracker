@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isTeacher() {
+      // For this app, we'll consider the user who set up the app (owner) as teacher
+      // or anyone whose email matches the known teacher email
+      return isSignedIn() && (
+        request.auth.token.email == 'watcharaphon_pa@t-tech.ac.th' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Helpers ---
+
+    function isValidSubject(data) {
+      return data.keys().hasAll(['id', 'name']) &&
+             data.id is string && data.name is string &&
+             data.name.size() > 0 && data.name.size() <= 100;
+    }
+
+    function isValidClassRoom(data) {
+      return data.keys().hasAll(['id', 'name']) &&
+             data.id is string && data.name is string &&
+             data.name.size() > 0 && data.name.size() <= 100;
+    }
+
+    function isValidAssignment(data) {
+      return data.keys().hasAll(['id', 'title', 'description', 'maxScore', 'courseKey']) &&
+             data.id is string && data.title is string &&
+             data.description is string && data.maxScore is number &&
+             data.courseKey is string;
+    }
+
+    function isValidStudent(data) {
+      return data.keys().hasAll(['id', 'studentId', 'name', 'courseKey']) &&
+             data.studentId is string && data.name is string && data.courseKey is string;
+    }
+
+    function isValidSubmission(data) {
+      return data.keys().hasAll(['id', 'assignmentId', 'studentId', 'fileUrl', 'status', 'submittedAt']) &&
+             data.status in ['pending', 'graded'] &&
+             data.fileUrl is string && data.fileUrl.size() > 10;
+    }
+
+    // --- Collection Rules ---
+
+    match /subjects/{subjectId} {
+      allow read: if true; // Students need to see subjects
+      allow write: if isTeacher() && isValidSubject(incoming());
+    }
+
+    match /classRooms/{classId} {
+      allow read: if true;
+      allow write: if isTeacher() && isValidClassRoom(incoming());
+    }
+
+    match /assignments/{assignmentId} {
+      allow read: if true;
+      allow write: if isTeacher() && isValidAssignment(incoming());
+    }
+
+    match /students/{studentDocId} {
+      allow read: if true; // Public for students to check their grades by ID
+      allow write: if isTeacher() && isValidStudent(incoming());
+      allow update: if isTeacher() && isValidStudent(incoming());
+    }
+
+    match /submissions/{submissionId} {
+      allow read: if isTeacher() || (isSignedIn() && existing().studentId == request.auth.uid); // Student can see their own or Teacher
+      allow create: if isValidSubmission(incoming()); // Anyone can submit for now if they have assignment ID
+      allow update: if isTeacher() && isValidSubmission(incoming());
+      allow delete: if isTeacher();
+    }
+    
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Managed via console
+    }
+  }
+}

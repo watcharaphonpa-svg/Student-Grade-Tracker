@@ -5,6 +5,8 @@ import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import multer from "multer";
+import { Readable } from "stream";
 
 dotenv.config();
 
@@ -23,7 +25,12 @@ const oauth2Client = new google.auth.OAuth2(
   (process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_URL}/auth/google/callback`).trim()
 );
 
-const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
+const SCOPES = [
+  "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/drive.file"
+];
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 // --- OAuth Routes ---
 
@@ -186,12 +193,63 @@ app.post("/api/sheets/sync", async (req, res) => {
   }
 });
 
+// --- Drive API Routes ---
+
+app.post("/api/drive/upload", upload.single("file"), async (req, res) => {
+  const tokensStr = req.cookies.google_tokens;
+  if (!tokensStr) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  const tokens = JSON.parse(tokensStr);
+  oauth2Client.setCredentials(tokens);
+
+  try {
+    const drive = google.drive({ version: "v3", auth: oauth2Client });
+    
+    const { studentId, assignmentId, studentName } = req.body;
+    console.log('Server: Receiving upload request from:', studentId, studentName);
+    
+    const fileName = `${studentId}_${studentName}_${assignmentId}_${req.file.originalname}`;
+    console.log('Server: Uploading as:', fileName);
+
+    const fileMetadata = {
+      name: fileName,
+      // Optional: You could create a specific folder for assignments
+    };
+
+    const media = {
+      mimeType: req.file.mimetype,
+      body: Readable.from(req.file.buffer),
+    };
+
+    const file = await drive.files.create({
+      requestBody: fileMetadata,
+      media: media,
+      fields: "id, webViewLink",
+    });
+
+    res.json({ 
+      success: true, 
+      fileId: file.data.id,
+      url: file.data.webViewLink 
+    });
+  } catch (error: any) {
+    console.error("Drive API error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Helper functions (mirrored from frontend for server-side calculation if needed)
 function calculateTotal(student: any) {
-  const a1 = student.assignment1.part1 + student.assignment1.part2 + student.assignment1.part3;
-  const a2 = student.assignment2.part1 + student.assignment2.part2 + student.assignment2.part3;
-  const a3 = student.assignment3.part1 + student.assignment3.part2 + student.assignment3.part3;
-  return student.behavior + student.attendance + a1 + a2 + a3 + student.midterm + student.final;
+  const a1 = (student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0);
+  const a2 = (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0);
+  const a3 = (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0);
+  return (student.behavior || 0) + (student.attendance || 0) + a1 + a2 + a3 + (student.midterm || 0) + (student.final || 0);
 }
 
 function getGrade(total: number) {
