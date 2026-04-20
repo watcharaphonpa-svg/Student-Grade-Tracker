@@ -7,6 +7,7 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import multer from "multer";
 import { Readable } from "stream";
+import fs from "fs";
 
 dotenv.config();
 
@@ -18,6 +19,9 @@ const PORT = 3000;
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Export app for serverless environments (like Vercel)
+export default app;
 
 const oauth2Client = new google.auth.OAuth2(
   (process.env.GOOGLE_CLIENT_ID || "").trim(),
@@ -265,7 +269,8 @@ function getGrade(total: number) {
 // --- Vite Middleware ---
 
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  // Only use Vite middleware in local development (AI Studio)
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -273,15 +278,20 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  // Only start listening if not in a serverless environment (like Vercel)
+  if (!process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
