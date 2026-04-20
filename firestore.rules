@@ -64,6 +64,13 @@ service cloud.firestore {
              data.fileUrl is string && data.fileUrl.size() > 10;
     }
 
+    function isValidAttendance(data) {
+      return data.keys().hasAll(['id', 'studentId', 'date', 'status', 'courseKey']) &&
+             data.status in ['present', 'late', 'absent', 'leave'] &&
+             data.date is string && data.date.size() == 10 &&
+             data.courseKey is string;
+    }
+
     // --- Collection Rules ---
 
     match /subjects/{subjectId} {
@@ -94,6 +101,12 @@ service cloud.firestore {
       allow read: if true; // Allow students to check their work/grades
       allow create: if isValidSubmission(incoming());
       allow update: if isTeacher() && isValidSubmission(incoming());
+      allow delete: if isTeacher();
+    }
+
+    match /attendance/{attendanceId} {
+      allow list, get: if true;
+      allow create, update: if isTeacher() && isValidAttendance(incoming());
       allow delete: if isTeacher();
     }
     

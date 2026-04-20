@@ -67,12 +67,22 @@ interface Submission {
   submittedAt: string;
 }
 
+interface Attendance {
+  id: string;
+  studentId: string;
+  date: string;
+  status: 'present' | 'late' | 'absent' | 'leave';
+  courseKey: string;
+  timestamp: string;
+}
+
 interface AppData {
   subjects: Subject[];
   classRooms: ClassRoom[];
   courses: Record<string, Student[]>;
   assignments: Assignment[];
   submissions: Submission[];
+  attendance: Attendance[];
 }
 
 // --- Constants ---
@@ -123,7 +133,8 @@ export default function App() {
     classRooms: [],
     courses: {},
     assignments: [],
-    submissions: []
+    submissions: [],
+    attendance: []
   });
 
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
@@ -189,12 +200,18 @@ export default function App() {
       setAppData(prev => ({ ...prev, courses }));
     });
 
+    // Attendance
+    const unsubAttendance = onSnapshot(collection(db, 'attendance'), (snap) => {
+      setAppData(prev => ({ ...prev, attendance: snap.docs.map(d => d.data() as Attendance) }));
+    });
+
     return () => {
       unsubSubjects();
       unsubClasses();
       unsubAssignments();
       unsubSubmissions();
       unsubStudents();
+      unsubAttendance();
     };
   }, [user]); // Re-run when user changes to update submission listener
 
@@ -238,7 +255,9 @@ export default function App() {
     }
   }, []);
 
-  const [teacherTab, setTeacherTab] = useState<'grades' | 'assignments' | 'submissions'>('grades');
+  const [teacherTab, setTeacherTab] = useState<'grades' | 'assignments' | 'submissions' | 'attendance'>('grades');
+  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [currentAttendance, setCurrentAttendance] = useState<Record<string, 'present' | 'late' | 'absent' | 'leave'>>({});
 
   // Student Portal State
   const [searchId, setSearchId] = useState('');
@@ -632,6 +651,43 @@ export default function App() {
     }
   };
 
+  const handleSaveAttendance = async () => {
+    const isTeacher = user?.email === 'watcharaphon_pa@t-tech.ac.th';
+    if (!isTeacher) return;
+
+    setIsSyncing(true);
+    try {
+      const promises = Object.entries(currentAttendance).map(([studentId, status]) => {
+        const id = `${studentId}-${attendanceDate}`;
+        const record: Attendance = {
+          id,
+          studentId,
+          date: attendanceDate,
+          status: status as 'present' | 'late' | 'absent' | 'leave',
+          courseKey: currentCourseKey,
+          timestamp: new Date().toISOString()
+        };
+        return setDoc(doc(db, 'attendance', id), record);
+      });
+      await Promise.all(promises);
+      alert('✅ บันทึกการเช็คชื่อเรียบร้อยแล้ว');
+    } catch (err) {
+      console.error('Attendance save error:', err);
+      alert('❌ เกิดข้อผิดพลาดในการบันทึก');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    const records = (appData.attendance || []).filter(a => a.date === attendanceDate && a.courseKey === currentCourseKey);
+    const map: Record<string, 'present' | 'late' | 'absent' | 'leave'> = {};
+    records.forEach(r => {
+      map[r.studentId] = r.status as 'present' | 'late' | 'absent' | 'leave';
+    });
+    setCurrentAttendance(map);
+  }, [attendanceDate, currentCourseKey, appData.attendance]);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     // Search across all courses
@@ -835,6 +891,15 @@ export default function App() {
                       {(appData.submissions || []).filter(s => s.status === 'pending').length}
                     </span>
                   )}
+                </button>
+                <button 
+                  onClick={() => setTeacherTab('attendance')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm ${
+                    teacherTab === 'attendance' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  เช็คชื่อ
                 </button>
               </div>
 
@@ -1433,6 +1498,107 @@ export default function App() {
                 </div>
               </div>
             )}
+            {teacherTab === 'attendance' && (
+              /* Attendance View */
+              <div className="space-y-6">
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6"
+                >
+                  <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 border border-indigo-100">
+                          <CheckCircle2 className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold text-slate-800">เช็คชื่อนักเรียน</h2>
+                          <p className="text-slate-500 font-medium">บันทึกการมาเรียนประจำวัน</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100 w-fit">
+                        <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider pl-4">วันที่เช็คชื่อ</div>
+                        <input 
+                          type="date"
+                          value={attendanceDate}
+                          onChange={(e) => setAttendanceDate(e.target.value)}
+                          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={handleSaveAttendance}
+                        disabled={isSyncing || students.length === 0}
+                        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-8 py-4 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-100 active:scale-95"
+                      >
+                        {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                        บันทึกข้อมูลวันนี้
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden border border-slate-100 rounded-2xl">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/80 border-b border-slate-100 italic">
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold">เลขที่</th>
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold">รหัสนักเรียน</th>
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold">ชื่อ-นามสกุล</th>
+                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">สถานะการมาเรียน</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {(students || []).map((student) => (
+                          <motion.tr 
+                            key={student.id} 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="hover:bg-slate-50/50 transition-all group"
+                          >
+                            <td className="p-4 font-mono text-sm text-slate-400 group-hover:text-indigo-600">{student.no}</td>
+                            <td className="p-4 font-mono text-sm text-slate-400">{student.studentId}</td>
+                            <td className="p-4">
+                              <p className="font-bold text-slate-700">{student.name}</p>
+                            </td>
+                            <td className="p-4">
+                              <div className="flex justify-center items-center gap-2">
+                                {[
+                                  { id: 'present', label: 'มา', color: 'bg-emerald-500', active: 'bg-emerald-500 text-white ring-4 ring-emerald-100' },
+                                  { id: 'late', label: 'สาย', color: 'bg-amber-500', active: 'bg-amber-500 text-white ring-4 ring-amber-100' },
+                                  { id: 'absent', label: 'ขาด', color: 'bg-rose-500', active: 'bg-rose-500 text-white ring-4 ring-rose-100' },
+                                  { id: 'leave', label: 'ลา', color: 'bg-indigo-500', active: 'bg-indigo-500 text-white ring-4 ring-indigo-100' }
+                                ].map((btn) => (
+                                  <button
+                                    key={btn.id}
+                                    onClick={() => setCurrentAttendance(prev => ({ ...prev, [student.studentId]: btn.id as any }))}
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                                      currentAttendance[student.studentId] === btn.id 
+                                        ? btn.active 
+                                        : 'bg-slate-100 text-slate-400 hover:text-slate-600'
+                                    }`}
+                                  >
+                                    {btn.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </td>
+                          </motion.tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {students.length === 0 && (
+                      <div className="p-12 text-center text-slate-400">
+                        ไม่มีรายชื่อนักเรียนในห้องนี้
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              </div>
+            )}
           </>
         ) : (
           /* Student View */
@@ -1577,74 +1743,120 @@ export default function App() {
                        </div>
                     </div>
 
+                    {/* Attendance History Card */}
+                    <div className="md:col-span-4 bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl space-y-8 h-full flex flex-col">
+                      <div className="flex items-center justify-between">
+                         <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                           <div className="p-2.5 bg-amber-50 text-amber-600 rounded-2xl">
+                             <CheckCircle2 className="w-6 h-6" />
+                           </div>
+                           การมาเรียน
+                         </h3>
+                       </div>
+
+                       <div className="grid grid-cols-2 gap-3">
+                         {[
+                           { label: 'มา', key: 'present', color: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
+                           { label: 'สาย', key: 'late', color: 'bg-amber-50 text-amber-600 border-amber-100' },
+                           { label: 'ขาด', key: 'absent', color: 'bg-rose-50 text-rose-600 border-rose-100' },
+                           { label: 'ลา', key: 'leave', color: 'bg-indigo-50 text-indigo-600 border-indigo-100' }
+                         ].map(stat => {
+                           const count = (appData.attendance || []).filter(a => a.studentId === foundStudent.studentId && a.status === stat.key).length;
+                           return (
+                             <div key={stat.key} className={`p-4 rounded-2xl border text-center ${stat.color}`}>
+                               <p className="text-[10px] font-black uppercase mb-1">{stat.label}</p>
+                               <p className="text-2xl font-black">{count}</p>
+                             </div>
+                           )
+                         })}
+                       </div>
+
+                       <div className="flex-1 overflow-y-auto pr-2 space-y-2 max-h-[400px] scrollbar-hide">
+                         {(appData.attendance || []).filter(a => a.studentId === foundStudent.studentId).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 15).map(record => (
+                           <div key={record.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100 text-[10px]">
+                             <span className="font-black text-slate-500 uppercase">{new Date(record.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</span>
+                             <span className={`px-2 py-0.5 rounded-full font-black uppercase ${
+                               record.status === 'present' ? 'bg-emerald-100 text-emerald-600' :
+                               record.status === 'late' ? 'bg-amber-100 text-amber-600' :
+                               record.status === 'absent' ? 'bg-rose-100 text-rose-600' :
+                               'bg-indigo-100 text-indigo-600'
+                             }`}>
+                               {record.status === 'present' ? 'มา' : record.status === 'late' ? 'สาย' : record.status === 'absent' ? 'ขาด' : 'ลา'}
+                             </span>
+                           </div>
+                         ))}
+                         {(appData.attendance || []).filter(a => a.studentId === foundStudent.studentId).length === 0 && (
+                           <div className="text-center py-8 text-slate-300 text-[10px] font-bold">ยังไม่มีข้อมูลการเข้าเรียน</div>
+                         )}
+                       </div>
+                    </div>
+
                     {/* Online Assignments Card */}
-                    <div className="md:col-span-4 space-y-6">
-                      <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl h-full flex flex-col">
-                        <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8">
-                          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-2xl">
-                            <Upload className="w-6 h-6" />
-                          </div>
-                          งานออนไลน์
-                        </h3>
-
-                        <div className="space-y-4 flex-1">
-                          {(appData.assignments || []).map(assignment => {
-                            const submission = appData.submissions.find(s => s.assignmentId === assignment.id && s.studentId === foundStudent.studentId);
-                            const isDone = !!submission;
-                            const uploading = isUploading[assignment.id];
-
-                            return (
-                              <div key={assignment.id} className={`p-6 rounded-[2.5rem] border transition-all ${
-                                isDone ? 'bg-emerald-50/50 border-emerald-100' : 'bg-slate-50 border-slate-100 hover:border-indigo-100'
-                              }`}>
-                                <div className="space-y-4">
-                                  <div>
-                                    <h4 className="font-black text-slate-800 leading-tight mb-1">{assignment.title}</h4>
-                                    <p className="text-[10px] font-bold text-slate-400 line-clamp-2">{assignment.description}</p>
-                                  </div>
-
-                                  {isDone ? (
-                                    <div className="space-y-3">
-                                      <div className="flex items-center justify-between text-xs font-bold">
-                                        <span className="text-emerald-600 flex items-center gap-1.5">
-                                          <CheckCircle2 className="w-3.5 h-3.5" /> ส่งแล้ว
-                                        </span>
-                                        <span className="text-slate-400">{submission.status === 'graded' ? `${submission.score}/${assignment.maxScore}` : 'รอตรวจ'}</span>
-                                      </div>
-                                      <a 
-                                        href={submission.fileUrl} target="_blank" rel="noreferrer" 
-                                        className="block w-full text-center py-3 bg-white text-emerald-600 rounded-2xl border border-emerald-100 text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors"
-                                      >
-                                        View Submission
-                                      </a>
-                                    </div>
-                                  ) : (
-                                    <label className={`block w-full text-center py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer ${
-                                      uploading ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'
-                                    }`}>
-                                      {uploading ? 'Uploading...' : 'ส่งงานตอนนี้'}
-                                      <input 
-                                        type="file" 
-                                        className="hidden" 
-                                        disabled={uploading}
-                                        onChange={(e) => handleStudentFileUpload(e, assignment.id, foundStudent)} 
-                                      />
-                                    </label>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          {(appData.assignments || []).length === 0 && (
-                            <div className="text-center py-12">
-                              <div className="w-16 h-16 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200 text-slate-300">
-                                <Clock className="w-8 h-8" />
-                              </div>
-                              <p className="text-sm font-bold text-slate-400">ยังไม่มีงานออนไลน์</p>
-                            </div>
-                          )}
+                    <div className="md:col-span-12 bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl flex flex-col">
+                      <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8">
+                        <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-2xl">
+                          <Upload className="w-6 h-6" />
                         </div>
+                        งานออนไลน์
+                      </h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {(appData.assignments || []).map(assignment => {
+                          const submission = appData.submissions.find(s => s.assignmentId === assignment.id && s.studentId === foundStudent.studentId);
+                          const isDone = !!submission;
+                          const uploading = isUploading[assignment.id];
+
+                          return (
+                            <div key={assignment.id} className={`p-6 rounded-[2.5rem] border transition-all ${
+                              isDone ? 'bg-emerald-50/50 border-emerald-100' : 'bg-slate-50 border-slate-100 hover:border-indigo-100'
+                            }`}>
+                              <div className="space-y-4">
+                                <div>
+                                  <h4 className="font-black text-slate-800 leading-tight mb-1">{assignment.title}</h4>
+                                  <p className="text-[10px] font-bold text-slate-400 line-clamp-2">{assignment.description}</p>
+                                </div>
+
+                                {isDone ? (
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between text-xs font-bold">
+                                      <span className="text-emerald-600 flex items-center gap-1.5">
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> ส่งแล้ว
+                                      </span>
+                                      <span className="text-slate-400">{submission.status === 'graded' ? `${submission.score}/${assignment.maxScore}` : 'รอตรวจ'}</span>
+                                    </div>
+                                    <a 
+                                      href={submission.fileUrl} target="_blank" rel="noreferrer" 
+                                      className="block w-full text-center py-3 bg-white text-emerald-600 rounded-2xl border border-emerald-100 text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors"
+                                    >
+                                      View Submission
+                                    </a>
+                                  </div>
+                                ) : (
+                                  <label className={`block w-full text-center py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer ${
+                                    uploading ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'
+                                  }`}>
+                                    {uploading ? 'Uploading...' : 'ส่งงานตอนนี้'}
+                                    <input 
+                                      type="file" 
+                                      className="hidden" 
+                                      disabled={uploading}
+                                      onChange={(e) => handleStudentFileUpload(e, assignment.id, foundStudent)} 
+                                    />
+                                  </label>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {(appData.assignments || []).length === 0 && (
+                          <div className="md:col-span-3 text-center py-12">
+                            <div className="w-16 h-16 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200 text-slate-300">
+                              <Clock className="w-8 h-8" />
+                            </div>
+                            <p className="text-sm font-bold text-slate-400">ยังไม่มีงานออนไลน์</p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

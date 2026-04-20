@@ -78,6 +78,20 @@
         "submittedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "assignmentId", "studentId", "fileUrl", "status", "submittedAt"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Daily attendance record for a student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["present", "late", "absent", "leave"] },
+        "courseKey": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "studentId", "date", "status", "courseKey"]
     }
   },
   "firestore": {
@@ -100,6 +114,10 @@
     "/submissions/{submissionId}": {
       "schema": "Submission",
       "description": "Collection of student submissions"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": "Attendance",
+      "description": "Collection of student attendance records"
     }
   }
 }
