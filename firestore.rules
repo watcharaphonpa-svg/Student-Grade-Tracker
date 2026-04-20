@@ -67,7 +67,7 @@ service cloud.firestore {
     function isValidAttendance(data) {
       return data.keys().hasAll(['id', 'studentId', 'date', 'status', 'courseKey']) &&
              data.status in ['present', 'late', 'absent', 'leave'] &&
-             data.date is string && data.date.size() == 10 &&
+             data.date is string &&
              data.courseKey is string;
     }
 
@@ -106,7 +106,7 @@ service cloud.firestore {
 
     match /attendance/{attendanceId} {
       allow list, get: if true;
-      allow create, update: if isTeacher() && isValidAttendance(incoming());
+      allow create, update: if isTeacher() && isValidId(attendanceId) && isValidAttendance(incoming());
       allow delete: if isTeacher();
     }
     

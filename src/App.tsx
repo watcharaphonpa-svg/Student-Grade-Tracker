@@ -653,7 +653,10 @@ export default function App() {
 
   const handleSaveAttendance = async () => {
     const isTeacher = user?.email === 'watcharaphon_pa@t-tech.ac.th';
-    if (!isTeacher) return;
+    if (!isTeacher) {
+      alert('❌ เฉพาะอาจารย์ที่ได้รับอนุญาตเท่านั้นที่สามารถบันทึกข้อมูลได้');
+      return;
+    }
 
     setIsSyncing(true);
     try {
@@ -671,9 +674,9 @@ export default function App() {
       });
       await Promise.all(promises);
       alert('✅ บันทึกการเช็คชื่อเรียบร้อยแล้ว');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Attendance save error:', err);
-      alert('❌ เกิดข้อผิดพลาดในการบันทึก');
+      alert(`❌ เกิดข้อผิดพลาดในการบันทึก: ${err.message || 'กรุณาตรวจสอบสิทธิ์การเข้าถึง'}`);
     } finally {
       setIsSyncing(false);
     }
@@ -1501,102 +1504,138 @@ export default function App() {
             {teacherTab === 'attendance' && (
               /* Attendance View */
               <div className="space-y-6">
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6"
-                >
-                  <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 border border-indigo-100">
-                          <CheckCircle2 className="w-6 h-6" />
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                  {/* Internal Check-in System */}
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="md:col-span-8 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 border border-indigo-100">
+                            <CheckCircle2 className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <h2 className="text-2xl font-bold text-slate-800">ระบบเช็คชื่อภายใน</h2>
+                            <p className="text-slate-500 font-medium text-sm">บันทึกข้อมูลเข้าฐานข้อมูลของวิชานี้โดยตรง</p>
+                          </div>
                         </div>
-                        <div>
-                          <h2 className="text-2xl font-bold text-slate-800">เช็คชื่อนักเรียน</h2>
-                          <p className="text-slate-500 font-medium">บันทึกการมาเรียนประจำวัน</p>
+                        
+                        <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100 w-fit">
+                          <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider pl-4">วันที่เช็คชื่อ</div>
+                          <input 
+                            type="date"
+                            value={attendanceDate}
+                            onChange={(e) => setAttendanceDate(e.target.value)}
+                            className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                          />
                         </div>
                       </div>
-                      
-                      <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100 w-fit">
-                        <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider pl-4">วันที่เช็คชื่อ</div>
-                        <input 
-                          type="date"
-                          value={attendanceDate}
-                          onChange={(e) => setAttendanceDate(e.target.value)}
-                          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
-                        />
+
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={handleSaveAttendance}
+                          disabled={isSyncing || students.length === 0}
+                          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-8 py-4 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-100 active:scale-95"
+                        >
+                          {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                          บันทึกข้อมูลวันนี้
+                        </button>
                       </div>
                     </div>
 
-                    <div className="flex gap-3">
-                      <button 
-                        onClick={handleSaveAttendance}
-                        disabled={isSyncing || students.length === 0}
-                        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-8 py-4 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-100 active:scale-95"
-                      >
-                        {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                        บันทึกข้อมูลวันนี้
-                      </button>
+                    <div className="overflow-hidden border border-slate-100 rounded-2xl">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50/80 border-b border-slate-100 italic">
+                            <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold">เลขที่</th>
+                            <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold">ชื่อ-นามสกุล</th>
+                            <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">สถานะ</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {(students || []).map((student) => (
+                            <motion.tr 
+                              key={student.id} 
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              className="hover:bg-slate-50/50 transition-all group"
+                            >
+                              <td className="p-4 font-mono text-sm text-slate-400 group-hover:text-indigo-600 w-16">{student.no}</td>
+                              <td className="p-4">
+                                <p className="font-bold text-slate-700 leading-tight">{student.name}</p>
+                                <p className="text-[10px] text-slate-400 font-mono">{student.studentId}</p>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex justify-center items-center gap-1.5">
+                                  {[
+                                    { id: 'present', label: 'มา', color: 'bg-emerald-500', active: 'bg-emerald-500 text-white ring-4 ring-emerald-100' },
+                                    { id: 'late', label: 'สาย', color: 'bg-amber-500', active: 'bg-amber-500 text-white ring-4 ring-amber-100' },
+                                    { id: 'absent', label: 'ขาด', color: 'bg-rose-500', active: 'bg-rose-500 text-white ring-4 ring-rose-100' },
+                                    { id: 'leave', label: 'ลา', color: 'bg-indigo-500', active: 'bg-indigo-500 text-white ring-4 ring-indigo-100' }
+                                  ].map((btn) => (
+                                    <button
+                                      key={btn.id}
+                                      onClick={() => setCurrentAttendance(prev => ({ ...prev, [student.studentId]: btn.id as any }))}
+                                      className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all ${
+                                        currentAttendance[student.studentId] === btn.id 
+                                          ? btn.active 
+                                          : 'bg-slate-100 text-slate-400 hover:text-slate-600'
+                                      }`}
+                                    >
+                                      {btn.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </td>
+                            </motion.tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {students.length === 0 && (
+                        <div className="p-12 text-center text-slate-400">
+                          ไม่มีรายชื่อนักเรียนในห้องนี้
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  </motion.div>
 
-                  <div className="overflow-hidden border border-slate-100 rounded-2xl">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50/80 border-b border-slate-100 italic">
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold">เลขที่</th>
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold">รหัสนักเรียน</th>
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold">ชื่อ-นามสกุล</th>
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">สถานะการมาเรียน</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50">
-                        {(students || []).map((student) => (
-                          <motion.tr 
-                            key={student.id} 
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="hover:bg-slate-50/50 transition-all group"
-                          >
-                            <td className="p-4 font-mono text-sm text-slate-400 group-hover:text-indigo-600">{student.no}</td>
-                            <td className="p-4 font-mono text-sm text-slate-400">{student.studentId}</td>
-                            <td className="p-4">
-                              <p className="font-bold text-slate-700">{student.name}</p>
-                            </td>
-                            <td className="p-4">
-                              <div className="flex justify-center items-center gap-2">
-                                {[
-                                  { id: 'present', label: 'มา', color: 'bg-emerald-500', active: 'bg-emerald-500 text-white ring-4 ring-emerald-100' },
-                                  { id: 'late', label: 'สาย', color: 'bg-amber-500', active: 'bg-amber-500 text-white ring-4 ring-amber-100' },
-                                  { id: 'absent', label: 'ขาด', color: 'bg-rose-500', active: 'bg-rose-500 text-white ring-4 ring-rose-100' },
-                                  { id: 'leave', label: 'ลา', color: 'bg-indigo-500', active: 'bg-indigo-500 text-white ring-4 ring-indigo-100' }
-                                ].map((btn) => (
-                                  <button
-                                    key={btn.id}
-                                    onClick={() => setCurrentAttendance(prev => ({ ...prev, [student.studentId]: btn.id as any }))}
-                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                                      currentAttendance[student.studentId] === btn.id 
-                                        ? btn.active 
-                                        : 'bg-slate-100 text-slate-400 hover:text-slate-600'
-                                    }`}
-                                  >
-                                    {btn.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </td>
-                          </motion.tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {students.length === 0 && (
-                      <div className="p-12 text-center text-slate-400">
-                        ไม่มีรายชื่อนักเรียนในห้องนี้
+                  {/* External Check-in Option */}
+                  <motion.div 
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="md:col-span-4 bg-gradient-to-br from-indigo-600 to-indigo-800 p-8 rounded-3xl text-white shadow-xl flex flex-col justify-between"
+                  >
+                    <div className="space-y-6">
+                      <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-md">
+                        <ExternalLink className="w-8 h-8" />
                       </div>
-                    )}
-                  </div>
-                </motion.div>
+                      <div className="space-y-2">
+                        <h3 className="text-2xl font-black leading-tight">ใช้ระบบภายนอก (Check-in Pro)</h3>
+                        <p className="text-indigo-100 text-sm leading-relaxed">
+                          หากต้องการใช้ระบบเช็คชื่ออื่นที่คุณถนัด สามารถกดเปิดลิงก์ด้านล่างเพื่อใช้งานควบคู่กันได้
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 pt-8">
+                       <a 
+                         href="https://check-in-pro.vercel.app/" 
+                         target="_blank" 
+                         rel="noreferrer"
+                         className="flex items-center justify-center gap-3 bg-white text-indigo-600 w-full py-4 rounded-2xl font-black text-sm hover:bg-slate-50 transition-all shadow-lg active:scale-95"
+                       >
+                         <Monitor className="w-5 h-5" />
+                         เปิดระบบ Check-in Pro
+                       </a>
+                       <p className="text-[10px] text-center text-indigo-300 font-medium">
+                         * ระบบภายนอกจะไม่เชื่อมต่อคะแนนเข้ากับตัวจัดการนี้โดยอัตโนมัติ
+                       </p>
+                    </div>
+                  </motion.div>
+                </div>
               </div>
             )}
           </>
