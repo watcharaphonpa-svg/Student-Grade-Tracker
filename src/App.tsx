@@ -262,6 +262,7 @@ export default function App() {
   // Student Portal State
   const [searchId, setSearchId] = useState('');
   const [foundStudent, setFoundStudent] = useState<Student | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
 
   // Student-specific submission listener when searching
   useEffect(() => {
@@ -693,6 +694,7 @@ export default function App() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    setHasSearched(true);
     // Search across all courses
     let found: Student | null = null;
     for (const key in (appData.courses || {})) {
@@ -703,9 +705,6 @@ export default function App() {
       }
     }
     setFoundStudent(found);
-    if (!found && searchId) {
-      alert("ไม่พบข้อมูลนักเรียนรหัสนี้");
-    }
   };
 
   return (
@@ -1753,7 +1752,11 @@ export default function App() {
                     type="text" 
                     placeholder="รหัสประจำตัว (เช่น 66001)"
                     value={searchId}
-                    onChange={(e) => setSearchId(e.target.value)}
+                    onChange={(e) => {
+                      setSearchId(e.target.value);
+                      setHasSearched(false);
+                      if (foundStudent) setFoundStudent(null);
+                    }}
                     className="w-full pl-14 pr-6 py-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem] focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none text-xl font-bold transition-all placeholder:text-slate-300 placeholder:font-medium"
                   />
                 </div>
@@ -2027,7 +2030,7 @@ export default function App() {
                     </div>
                   </div>
                 </motion.div>
-            ) : searchId && (
+              ) : hasSearched && !foundStudent && (
               <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
