@@ -129,22 +129,103 @@ app.post("/api/sheets/sync", async (req, res) => {
       targetSheetName = spreadsheet.data.sheets?.[0].properties?.title || "Sheet1";
     }
 
-    const rows = students.map((s: any) => [
-      s.no || "", s.studentId || "", s.name || "",
-      s.behavior || 0, s.attendance || 0,
-      s.assignment1?.part1 || 0, s.assignment1?.part2 || 0, s.assignment1?.part3 || 0,
-      s.assignment2?.part1 || 0, s.assignment2?.part2 || 0, s.assignment2?.part3 || 0,
-      s.assignment3?.part1 || 0, s.assignment3?.part2 || 0, s.assignment3?.part3 || 0,
-      s.midterm || 0, s.final || 0,
-      calculateTotal(s),
-      getGrade(calculateTotal(s))
-    ]);
+    const rows = students.map((s: any) => {
+      const a1 = (s.assignment1?.part1 || 0) + (s.assignment1?.part2 || 0) + (s.assignment1?.part3 || 0);
+      const a2 = (s.assignment2?.part1 || 0) + (s.assignment2?.part2 || 0) + (s.assignment2?.part3 || 0);
+      const a3 = (s.assignment3?.part1 || 0) + (s.assignment3?.part2 || 0) + (s.assignment3?.part3 || 0);
+      const total = calculateTotal(s);
+      const grade = getGrade(total);
+      
+      const studentFields = [
+        { value: s.no || "", type: "number" },
+        { value: s.studentId || "", type: "string" },
+        { value: s.name || "", type: "string" },
+        { value: s.behavior || 0, type: "number" },
+        { value: s.attendance || 0, type: "number" },
+        { value: a1, type: "number", fail: a1 === 0 },
+        { value: a2, type: "number", fail: a2 === 0 },
+        { value: a3, type: "number", fail: a3 === 0 },
+        { value: s.midterm || 0, type: "number", fail: s.midterm === 0 },
+        { value: s.final || 0, type: "number", fail: (s.final || 0) < 10 },
+        { value: total, type: "number", bold: false },
+        { value: grade, type: "number", bold: true }
+      ];
 
-    await sheets.spreadsheets.values.update({
+      return {
+        values: studentFields.map(f => ({
+          userEnteredValue: f.type === "number" ? { numberValue: Number(f.value) } : { stringValue: String(f.value) },
+          userEnteredFormat: {
+            backgroundColor: f.fail ? { red: 1, green: 0, blue: 0 } : undefined,
+            horizontalAlignment: "CENTER",
+            verticalAlignment: "MIDDLE",
+            textFormat: { bold: f.bold || false }
+          }
+        }))
+      };
+    });
+
+    const headerData = [
+      ["", "", "", "", "", "งานที่ 1", "งานที่ 2", "งานที่ 3", "", "", "", ""],
+      ["เลขที่", "รหัสนักศึกษา", "ชื่อ-นามสกุล", "พฤติกรรม", "การมาเรียน", "รวม 15 คะแนน", "รวม 15 คะแนน", "รวม 15 คะแนน", "สอบกลางภาค", "สอบปลายภาค", "รวม 100 คะแนน", "เกรดเฉลี่ย"],
+      ["", "", "", "10", "10", "", "", "", "15", "20", "", ""]
+    ];
+
+    const spreadsheetData = await sheets.spreadsheets.get({ spreadsheetId: targetSpreadsheetId! });
+    const sheet = spreadsheetData.data.sheets?.find(s => s.properties?.title === targetSheetName);
+    const sheetId = sheet?.properties?.sheetId || 0;
+
+    await sheets.spreadsheets.batchUpdate({
       spreadsheetId: targetSpreadsheetId!,
-      range: `${targetSheetName}!A1`,
-      valueInputOption: "RAW",
-      requestBody: { values: [["เลขที่", "รหัสประจำตัว", "ชื่อ-นามสกุล", "พฤติกรรม", "เข้าเรียน", "งาน 1-1", "1-2", "1-3", "2-1", "2-2", "2-3", "3-1", "3-2", "3-3", "กลางภาค", "ปลายภาค", "รวม", "เกรด"], ...rows] },
+      requestBody: {
+        requests: [
+          {
+            updateCells: {
+              range: { sheetId, startRowIndex: 1, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 12 },
+              rows: headerData.map((rowData, rIdx) => ({
+                values: rowData.map((cellValue, cIdx) => ({
+                  userEnteredValue: { stringValue: String(cellValue) },
+                  userEnteredFormat: {
+                    backgroundColor: 
+                      (cIdx <= 2) ? { red: 249/255, green: 203/255, blue: 156/255 } : // Peach
+                      (cIdx === 11) ? { red: 1, green: 1, blue: 0 } : // Yellow
+                      { red: 1, green: 1, blue: 1 }, // White
+                    horizontalAlignment: "CENTER",
+                    verticalAlignment: "MIDDLE",
+                    textFormat: { bold: true },
+                    textRotation: (rIdx === 1 && (cIdx === 0 || cIdx === 1 || cIdx === 3 || cIdx === 4 || cIdx === 8 || cIdx === 9 || cIdx === 10 || cIdx === 11)) ? { angle: 90 } : undefined
+                  }
+                }))
+              })),
+              fields: "userEnteredValue,userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat,textRotation)"
+            }
+          },
+          {
+            updateCells: {
+              range: { sheetId, startRowIndex: 4, endRowIndex: 4 + students.length, startColumnIndex: 0, endColumnIndex: 12 },
+              rows: rows,
+              fields: "userEnteredValue,userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+            }
+          },
+          {
+            updateBorders: {
+              range: { sheetId, startRowIndex: 1, endRowIndex: 4 + students.length, startColumnIndex: 0, endColumnIndex: 12 },
+              top: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
+              bottom: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
+              left: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
+              right: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
+              innerHorizontal: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
+              innerVertical: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
+            }
+          },
+          {
+            updateDimensionProperties: {
+              range: { sheetId, dimension: "COLUMNS", startIndex: 2, endIndex: 3 },
+              properties: { pixelSize: 250 },
+              fields: "pixelSize"
+            }
+          }
+        ]
+      }
     });
 
     res.json({ success: true, spreadsheetId: targetSpreadsheetId, url: `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}` });
