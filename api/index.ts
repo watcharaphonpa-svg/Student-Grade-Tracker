@@ -104,29 +104,53 @@ app.post("/api/sheets/sync", async (req, res) => {
     client.setCredentials(tokens);
     const sheets = google.sheets({ version: "v4", auth: client });
     const { students, submissions, spreadsheetId, sheetName } = req.body;
+    const drive = google.drive({ version: "v3", auth: client });
+    const MASTER_FILE_NAME = "Student Grade Database";
     
     let targetSpreadsheetId = spreadsheetId;
-    let targetSheetName = sheetName;
+    let targetSheetName = sheetName || "Sheet1";
 
-    // If we have an ID, verify the spreadsheet and get the correct sheet name
-    if (targetSpreadsheetId) {
+    // 1. Find or Create Master Spreadsheet
+    if (!targetSpreadsheetId) {
       try {
-        const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: targetSpreadsheetId });
-        if (!targetSheetName) {
-          targetSheetName = spreadsheet.data.sheets?.[0].properties?.title || "Sheet1";
+        const searchRes = await drive.files.list({
+          q: `name = '${MASTER_FILE_NAME}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+          fields: "files(id, name)",
+        });
+        const existingFile = searchRes.data.files?.[0];
+        if (existingFile) {
+          targetSpreadsheetId = existingFile.id;
+        } else {
+          const spreadsheet = await sheets.spreadsheets.create({
+            requestBody: { properties: { title: MASTER_FILE_NAME } },
+          });
+          targetSpreadsheetId = spreadsheet.data.spreadsheetId;
         }
       } catch (e) {
-        // If ID is invalid, clear it to create a new one
-        targetSpreadsheetId = null;
+        // Fallback or error handling
+        return res.status(500).json({ error: "Failed to access Google Drive" });
       }
     }
 
-    if (!targetSpreadsheetId) {
-      const spreadsheet = await sheets.spreadsheets.create({
-        requestBody: { properties: { title: `Student Grade Tracker - ${new Date().toLocaleString('th-TH')}` } },
+    // 2. Verify spreadsheet and manage sheets (tabs)
+    let spreadsheetData;
+    try {
+      spreadsheetData = await sheets.spreadsheets.get({ spreadsheetId: targetSpreadsheetId! });
+    } catch (e) {
+      // If provided ID is invalid, try searching again or fail
+      return res.status(400).json({ error: "Invalid Spreadsheet ID" });
+    }
+
+    const sheetExists = spreadsheetData.data.sheets?.some(s => s.properties?.title === targetSheetName);
+    if (!sheetExists) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: targetSpreadsheetId!,
+        requestBody: {
+          requests: [{ addSheet: { properties: { title: targetSheetName } } }]
+        }
       });
-      targetSpreadsheetId = spreadsheet.data.spreadsheetId;
-      targetSheetName = spreadsheet.data.sheets?.[0].properties?.title || "Sheet1";
+      // Refetch to get the new sheetId
+      spreadsheetData = await sheets.spreadsheets.get({ spreadsheetId: targetSpreadsheetId! });
     }
 
     const rows = students.map((s: any) => {
@@ -170,7 +194,6 @@ app.post("/api/sheets/sync", async (req, res) => {
       ["", "", "", "10", "10", "", "", "", "15", "20", "", ""]
     ];
 
-    const spreadsheetData = await sheets.spreadsheets.get({ spreadsheetId: targetSpreadsheetId! });
     const sheet = spreadsheetData.data.sheets?.find(s => s.properties?.title === targetSheetName);
     const sheetId = sheet?.properties?.sheetId || 0;
 

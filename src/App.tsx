@@ -344,13 +344,18 @@ export default function App() {
 
   const handleSyncToSheets = async () => {
     setIsSyncing(true);
+    const currentSubject = appData.subjects.find(s => s.id === selectedSubjectId);
+    const currentClass = appData.classRooms.find(c => c.id === selectedClassId);
+    const courseTitle = `${currentSubject?.name || 'Unknown'} - ${currentClass?.name || 'Unknown'}`;
+
     try {
       const res = await fetch('/api/sheets/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           students,
-          submissions: appData.submissions
+          submissions: appData.submissions,
+          sheetName: courseTitle
         })
       });
       
