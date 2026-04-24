@@ -4,9 +4,13 @@ import {
   ChevronRight, ChevronDown, Info, Cloud, CloudCheck, ExternalLink, 
   Loader2, Search, FileText, CheckCircle2, Clock, User, Upload, 
   BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle,
-  Link, Check, MoreVertical, LogOut, FileDown, Download
+  Link, Check, MoreVertical, LogOut, FileDown, Download, FileType
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
+
 import { 
   collection, onSnapshot, doc, setDoc, updateDoc, 
   deleteDoc, query, where, getDocs 
@@ -246,6 +250,7 @@ export default function App() {
   const [view, setView] = useState<'teacher' | 'student'>('teacher');
   const [isLockedStudentView, setIsLockedStudentView] = useState(false);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -335,9 +340,9 @@ export default function App() {
       console.error('Firebase Login Error:', err);
       // Give more specific error message to help the user fix deployment issues
       if (err.code === 'auth/unauthorized-domain') {
-        alert('❌ เข้าสู่ระบบไม่สำเร็จ: โดเมนนี้ยังไม่ได้รับอนุญาตใน Firebase Console\n\nวิธีแก้ไข:\n1. ไปที่ Firebase Console\n2. เข้าเมนู Authentication > Settings > Authorized domains\n3. เพิ่มโดเมน vercel.app ของคุณเข้าไป');
+        alert('❌ เข้าสู่ระบบไม่สำเร็จ: โดเมนนี้ยังไม่ได้ลงทะเบียนใน Firebase');
       } else {
-        alert(`เข้าสู่ระบบไม่สำเร็จ: ${err.message || 'กรุณาลองใหม่อีกครั้ง'}`);
+        alert(`❌ เกิดข้อผิดพลาด: ${err.message}`);
       }
     }
   };
@@ -372,6 +377,41 @@ export default function App() {
       alert(`เกิดข้อผิดพลาดในการซิงค์: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const exportToPDF = async () => {
+    const reportElement = document.getElementById('grade-report-pdf');
+    if (!reportElement) return;
+
+    setIsExporting(true);
+    try {
+      // Temporarily show the report for capturing
+      reportElement.style.display = 'block';
+      
+      const canvas = await html2canvas(reportElement, {
+        scale: 2, // Higher quality
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      
+      const subject = appData.subjects.find(s => s.id === selectedSubjectId)?.name || 'Subject';
+      const classroom = appData.classRooms.find(c => c.id === selectedClassId)?.name || 'Class';
+      pdf.save(`รายงานคะแนน_${subject}_${classroom}.pdf`);
+    } catch (error) {
+      console.error('PDF Export Error:', error);
+      alert('เกิดข้อผิดพลาดในการสร้าง PDF');
+    } finally {
+      reportElement.style.display = 'none';
+      setIsExporting(false);
     }
   };
 
@@ -807,13 +847,14 @@ export default function App() {
 
                               <button 
                                 onClick={() => {
-                                  if(window.confirm('ยืนยันเลิกเชื่อมต่อ Google?')) setIsGoogleAuth(false);
+                                  if (!isExporting) exportToPDF();
                                   setIsActionsMenuOpen(false);
                                 }}
-                                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 text-slate-400 text-sm transition-colors text-left"
+                                disabled={isExporting}
+                                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-indigo-50 text-indigo-600 text-sm transition-colors text-left disabled:opacity-50"
                               >
-                                <Settings className="w-4 h-4" />
-                                <span className="font-bold">ตั้งค่ากูเกิล</span>
+                                {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileType className="w-4 h-4" />}
+                                <span className="font-bold">{isExporting ? 'กำลังสร้างไฟล์...' : 'ส่งออกเป็นไฟล์ PDF'}</span>
                               </button>
 
                               {students.length > 0 && (
@@ -2149,6 +2190,66 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+      {/* Hidden PDF Template */}
+      <div id="grade-report-pdf" style={{ display: 'none', position: 'absolute', left: '-9999px', width: '210mm', padding: '20mm', backgroundColor: 'white', color: '#1e293b', fontFamily: 'sans-serif' }}>
+        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 10px 0', color: '#4f46e5' }}>รายงานสรุปผลการเรียน</h1>
+          <p style={{ margin: '5px 0', fontSize: '14px' }}>
+            วิชา: {appData.subjects.find(s => s.id === selectedSubjectId)?.name || '-'} | 
+            ห้อง: {appData.classRooms.find(c => c.id === selectedClassId)?.name || '-'}
+          </p>
+          <p style={{ margin: '5px 0', fontSize: '12px', color: '#64748b' }}>วันที่ออกรายงาน: {new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        </div>
+
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#f8fafc' }}>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px' }}>เลขที่</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px' }}>รหัส</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px', textAlign: 'left' }}>ชื่อ-นามสกุล</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px' }}>จิตพิสัย</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px' }}>มาเรียน</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px' }}>งาน1</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px' }}>งาน2</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px' }}>งาน3</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px' }}>กลางภาค</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px' }}>ปลายภาค</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px', backgroundColor: '#e0e7ff', fontWeight: 'bold' }}>รวม</th>
+              <th style={{ border: '1px solid #e2e8f0', padding: '8px', backgroundColor: '#e0e7ff', fontWeight: 'bold' }}>เกรด</th>
+            </tr>
+          </thead>
+          <tbody>
+            {students.map((s) => {
+              const a1 = (s.assignment1?.part1 || 0) + (s.assignment1?.part2 || 0) + (s.assignment1?.part3 || 0);
+              const a2 = (s.assignment2?.part1 || 0) + (s.assignment2?.part2 || 0) + (s.assignment2?.part3 || 0);
+              const a3 = (s.assignment3?.part1 || 0) + (s.assignment3?.part2 || 0) + (s.assignment3?.part3 || 0);
+              const total = calculateTotal(s);
+              return (
+                <tr key={s.id}>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center' }}>{s.no}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center' }}>{s.studentId}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px' }}>{s.name}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center' }}>{s.behavior}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center' }}>{s.attendance}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center' }}>{a1}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center' }}>{a2}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center' }}>{a3}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center' }}>{s.midterm}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center' }}>{s.final}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{total}</td>
+                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'center', fontWeight: 'bold', color: '#4f46e5' }}>{getGrade(total)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div style={{ marginTop: '40px', textAlign: 'right', fontSize: '12px' }}>
+          <p>ลงชื่อ.................................................................</p>
+          <p style={{ marginRight: '15px' }}>( {user?.displayName || 'อาจารย์ผู้สอน'} )</p>
+          <p style={{ marginRight: '40px' }}>อาจารย์ผู้สอน</p>
+        </div>
+      </div>
     </div>
   );
 }
