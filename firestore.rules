@@ -71,6 +71,13 @@ service cloud.firestore {
              data.courseKey is string;
     }
 
+    function isValidTeacherNote(data) {
+      return data.keys().hasAll(['id', 'content', 'userId', 'updatedAt']) &&
+             data.id is string && data.content is string && 
+             data.userId == request.auth.uid &&
+             data.updatedAt is string;
+    }
+
     // --- Collection Rules ---
 
     match /subjects/{subjectId} {
@@ -113,6 +120,13 @@ service cloud.firestore {
     match /admins/{adminId} {
       allow read: if isSignedIn();
       allow write: if false; // Managed via console
+    }
+
+    match /teacherNotes/{noteId} {
+      allow list, get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidTeacherNote(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidTeacherNote(incoming());
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
     }
   }
 }

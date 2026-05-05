@@ -92,6 +92,20 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "studentId", "date", "status", "courseKey"]
+    },
+    "TeacherNote": {
+      "title": "TeacherNote",
+      "description": "Private notes or text fragments for teachers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "color": { "type": "string" },
+        "userId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "content", "userId", "updatedAt"]
     }
   },
   "firestore": {
@@ -118,6 +132,10 @@
     "/attendance/{attendanceId}": {
       "schema": "Attendance",
       "description": "Collection of student attendance records"
+    },
+    "/teacherNotes/{noteId}": {
+      "schema": "TeacherNote",
+      "description": "Collection of private teacher notes"
     }
   }
 }

@@ -4,7 +4,8 @@ import {
   ChevronRight, ChevronDown, Info, Cloud, CloudCheck, ExternalLink, 
   Loader2, Search, FileText, CheckCircle2, Clock, User, Upload, 
   BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle,
-  Link, Check, MoreVertical, LogOut, FileDown, Download, FileType
+  Link, Check, MoreVertical, LogOut, FileDown, Download, FileType,
+  StickyNote
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import jsPDF from 'jspdf';
@@ -80,6 +81,15 @@ interface Attendance {
   timestamp: string;
 }
 
+interface TeacherNote {
+  id: string;
+  title: string;
+  content: string;
+  color: string;
+  userId: string;
+  updatedAt: string;
+}
+
 interface AppData {
   subjects: Subject[];
   classRooms: ClassRoom[];
@@ -144,6 +154,7 @@ export default function App() {
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [selectedClassId, setSelectedClassId] = useState('');
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [teacherNotes, setTeacherNotes] = useState<TeacherNote[]>([]);
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -209,6 +220,17 @@ export default function App() {
       setAppData(prev => ({ ...prev, attendance: snap.docs.map(d => d.data() as Attendance) }));
     });
 
+    // Teacher Notes
+    let unsubNotes = () => {};
+    if (user) {
+      const qNotes = query(collection(db, 'teacherNotes'), where('userId', '==', user.uid));
+      unsubNotes = onSnapshot(qNotes, (snap) => {
+        const notes = snap.docs.map(d => d.data() as TeacherNote);
+        notes.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        setTeacherNotes(notes);
+      });
+    }
+
     return () => {
       unsubSubjects();
       unsubClasses();
@@ -216,10 +238,12 @@ export default function App() {
       unsubSubmissions();
       unsubStudents();
       unsubAttendance();
+      unsubNotes();
     };
   }, [user]); // Re-run when user changes to update submission listener
 
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [manageType, setManageType] = useState<'subject' | 'class' | 'assignment'>('subject');
   const [newItemName, setNewItemName] = useState('');
   const [newAssignmentDesc, setNewAssignmentDesc] = useState('');
@@ -378,6 +402,35 @@ export default function App() {
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const addNote = async () => {
+    if (!user) return;
+    const id = crypto.randomUUID();
+    const colors = ['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet'];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    const newNote: TeacherNote = {
+      id,
+      title: 'โน๊ตใหม่',
+      content: '',
+      color: randomColor,
+      userId: user.uid,
+      updatedAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, 'teacherNotes', id), newNote);
+  };
+
+  const updateNote = async (id: string, field: string, value: string) => {
+    const noteRef = doc(db, 'teacherNotes', id);
+    await updateDoc(noteRef, {
+      [field]: value,
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  const deleteNote = async (id: string) => {
+    if (!window.confirm('ยืนยันการลบโน๊ตนี้?')) return;
+    await deleteDoc(doc(db, 'teacherNotes', id));
   };
 
   const exportToPDF = async () => {
@@ -844,6 +897,18 @@ export default function App() {
                                   <span className="font-bold">เชื่อมต่อ Sheets</span>
                                 </button>
                               )}
+
+                              {/* Teacher Notes Access */}
+                              <button 
+                                onClick={() => {
+                                  setIsNotesModalOpen(true);
+                                  setIsActionsMenuOpen(false);
+                                }}
+                                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 text-sm transition-colors text-left group"
+                              >
+                                <StickyNote className="w-4 h-4 text-slate-400 group-hover:text-indigo-500" />
+                                <span className="font-bold">โน๊ตส่วนตัวของคุณครู</span>
+                              </button>
 
                               <button 
                                 onClick={() => {
@@ -2178,6 +2243,120 @@ export default function App() {
                     </div>
                   </>
                 ) : null}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Teacher Notes Modal */}
+      <AnimatePresence>
+        {isNotesModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsNotesModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-slate-50 rounded-[40px] w-full max-w-6xl h-[80vh] shadow-2xl flex flex-col overflow-hidden border border-white"
+            >
+              {/* Modal Header */}
+              <div className="p-8 pb-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                    <StickyNote className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-slate-800">โน๊ตส่วนตัวของคุณครู</h3>
+                    <p className="text-slate-400 font-medium">บันทึกข้อความหรือสิ่งที่ต้องทำส่วนตัว</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={addNote}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold transition-all active:scale-95 shadow-md"
+                  >
+                    <Plus className="w-5 h-5" />
+                    เขียนโน๊ตใหม่
+                  </button>
+                  <button 
+                    onClick={() => setIsNotesModalOpen(false)}
+                    className="p-3 hover:bg-slate-200 rounded-2xl transition-colors text-slate-400 lg:ml-4"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Content */}
+              <div className="flex-1 overflow-y-auto p-8 pt-4 custom-scrollbar">
+                {teacherNotes.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <AnimatePresence mode="popLayout">
+                      {teacherNotes.map((note) => (
+                        <motion.div
+                          key={note.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          layout
+                          className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative group overflow-hidden transition-all hover:shadow-md h-fit"
+                        >
+                          <div className={`absolute top-0 left-0 w-full h-1.5 ${
+                            note.color === 'emerald' ? 'bg-emerald-500' :
+                            note.color === 'amber' ? 'bg-amber-500' :
+                            note.color === 'rose' ? 'bg-rose-500' :
+                            note.color === 'sky'  ? 'bg-sky-500' :
+                            note.color === 'violet' ? 'bg-violet-500' :
+                            'bg-indigo-500'
+                          }`} />
+                          
+                          <input
+                            type="text"
+                            value={note.title}
+                            onChange={(e) => updateNote(note.id, 'title', e.target.value)}
+                            placeholder="หัวข้อ..."
+                            className="w-full bg-transparent border-none focus:ring-0 text-xl font-bold text-slate-800 p-0 placeholder:text-slate-300 mb-2"
+                          />
+                          <textarea
+                            value={note.content}
+                            onChange={(e) => updateNote(note.id, 'content', e.target.value)}
+                            placeholder="พิมพ์ข้อความที่นี่..."
+                            className="w-full bg-transparent border-none focus:ring-0 text-slate-600 p-0 min-h-[160px] resize-none placeholder:text-slate-300 leading-relaxed text-sm"
+                          />
+                          
+                          <div className="flex items-center justify-between pt-4 mt-2 border-t border-slate-50">
+                            <span className="text-[10px] font-medium text-slate-400 font-mono italic">
+                              อัปเดตล่าสุด {new Date(note.updatedAt).toLocaleTimeString('th-TH')} {new Date(note.updatedAt).toLocaleDateString('th-TH')}
+                            </span>
+                            <button
+                              onClick={() => deleteNote(note.id)}
+                              className="text-slate-200 hover:text-rose-500 transition-colors p-2 rounded-xl hover:bg-rose-50"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center space-y-4 py-20">
+                    <div className="w-24 h-24 bg-white rounded-[32px] shadow-sm flex items-center justify-center text-slate-200 border border-slate-100">
+                      <StickyNote className="w-10 h-10" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-xl font-bold text-slate-400">ยังไม่มีบันทึก</h4>
+                      <p className="text-slate-400 text-sm font-medium">คุณสามารถเพิ่มโน๊ตส่วนตัวเพื่อจดบันทึกสิ่งต่างๆ ได้ที่นี่</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>
