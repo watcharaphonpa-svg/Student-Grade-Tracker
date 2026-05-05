@@ -907,86 +907,79 @@ export default function App() {
               className="flex flex-col xl:flex-row xl:items-center justify-between gap-6"
             >
               {/* Tab Navigation */}
-              <div className="flex items-center bg-slate-200/50 p-1.5 rounded-2xl border border-slate-200 shadow-inner w-fit">
-                <button 
-                  onClick={() => setTeacherTab('grades')}
-                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm ${
-                    teacherTab === 'grades' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Calculator className="w-4 h-4" />
-                  ตารางคะแนน
-                </button>
-                <button 
-                  onClick={() => setTeacherTab('assignments')}
-                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm ${
-                    teacherTab === 'assignments' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <LayoutDashboard className="w-4 h-4" />
-                  จัดการงาน
-                </button>
-                <button 
-                  onClick={() => setTeacherTab('submissions')}
-                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm relative ${
-                    teacherTab === 'submissions' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Monitor className="w-4 h-4" />
-                  ตรวจงาน
-                  {(appData.submissions || []).filter(s => s.status === 'pending').length > 0 && (
-                    <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white ring-2 ring-white">
-                      {(appData.submissions || []).filter(s => s.status === 'pending').length}
-                    </span>
-                  )}
-                </button>
-                <button 
-                  onClick={() => setTeacherTab('attendance')}
-                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm ${
-                    teacherTab === 'attendance' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  เช็คชื่อ
-                </button>
-                <button 
-                  onClick={() => setTeacherTab('attendanceSummary')}
-                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm ${
-                    teacherTab === 'attendanceSummary' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Users className="w-4 h-4" />
-                  สรุปเช็คชื่อ
-                </button>
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/60 shadow-sm overflow-x-auto no-scrollbar max-w-full">
+                {[
+                  { id: 'grades', label: 'ตารางคะแนน', icon: Calculator },
+                  { id: 'assignments', label: 'จัดการงาน', icon: LayoutDashboard },
+                  { id: 'submissions', label: 'ตรวจงาน', icon: Monitor },
+                  { id: 'attendance', label: 'เช็คชื่อ', icon: CheckCircle2 },
+                  { id: 'attendanceSummary', label: 'สรุปเช็คชื่อ', icon: Users },
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = teacherTab === tab.id;
+                  const pendingSubmissions = tab.id === 'submissions' 
+                    ? (appData.submissions || []).filter(s => s.status === 'pending').length 
+                    : 0;
+
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setTeacherTab(tab.id as any)}
+                      className={`relative flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap min-w-fit ${
+                        isActive ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      {isActive && (
+                        <motion.div
+                          layoutId="activeTab"
+                          className="absolute inset-0 bg-white shadow-sm border border-slate-200/50 rounded-lg"
+                          transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                        />
+                      )}
+                      
+                      <span className="relative z-10 flex items-center gap-2">
+                        <Icon className={`w-4 h-4 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
+                        {tab.label}
+                        {pendingSubmissions > 0 && (
+                          <span className={`flex h-4.5 w-4.5 items-center justify-center rounded-full text-[10px] font-bold ${
+                            isActive ? 'bg-indigo-600 text-white' : 'bg-rose-500 text-white'
+                          } shadow-sm px-1 min-w-[18px]`}>
+                            {pendingSubmissions}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Context Selectors */}
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-5 py-3 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
-                  <BookOpen className="w-4 h-4 text-indigo-600" />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all group">
+                  <BookOpen className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600" />
                   <select 
                     value={selectedSubjectId}
                     onChange={(e) => setSelectedSubjectId(e.target.value)}
-                    className="bg-transparent border-none outline-none text-sm font-bold text-slate-700 pr-4 min-w-[120px]"
+                    className="bg-transparent border-none outline-none text-sm font-semibold text-slate-700 pr-2 min-w-[120px] cursor-pointer"
                   >
                     {appData.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
-                  <button onClick={() => { setManageType('subject'); setIsManageModalOpen(true); }} className="hover:bg-slate-100 p-2 rounded-xl transition-colors">
-                    <Settings className="w-4 h-4 text-slate-400" />
+                  <button onClick={() => { setManageType('subject'); setIsManageModalOpen(true); }} className="hover:bg-slate-100 p-1.5 rounded-lg transition-colors">
+                    <Settings className="w-3.5 h-3.5 text-slate-400" />
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-5 py-3 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
-                  <Users className="w-4 h-4 text-indigo-600" />
+                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all group">
+                  <Users className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600" />
                   <select 
                     value={selectedClassId}
                     onChange={(e) => setSelectedClassId(e.target.value)}
-                    className="bg-transparent border-none outline-none text-sm font-bold text-slate-700 pr-4 min-w-[80px]"
+                    className="bg-transparent border-none outline-none text-sm font-semibold text-slate-700 pr-2 min-w-[80px] cursor-pointer"
                   >
                     {appData.classRooms.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
-                  <button onClick={() => { setManageType('class'); setIsManageModalOpen(true); }} className="hover:bg-slate-100 p-2 rounded-xl transition-colors">
-                    <Settings className="w-4 h-4 text-slate-400" />
+                  <button onClick={() => { setManageType('class'); setIsManageModalOpen(true); }} className="hover:bg-slate-100 p-1.5 rounded-lg transition-colors">
+                    <Settings className="w-3.5 h-3.5 text-slate-400" />
                   </button>
                 </div>
               </div>
