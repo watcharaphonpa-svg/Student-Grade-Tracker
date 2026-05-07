@@ -244,6 +244,7 @@ export default function App() {
 
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
+  const [isGradingCriteriaModalOpen, setIsGradingCriteriaModalOpen] = useState(false);
   const [manageType, setManageType] = useState<'subject' | 'class' | 'assignment'>('subject');
   const [newItemName, setNewItemName] = useState('');
   const [newAssignmentDesc, setNewAssignmentDesc] = useState('');
@@ -284,7 +285,7 @@ export default function App() {
     }
   }, []);
 
-  const [teacherTab, setTeacherTab] = useState<'grades' | 'assignments' | 'submissions' | 'attendance' | 'attendanceSummary'>('grades');
+  const [teacherTab, setTeacherTab] = useState<'grades' | 'assignments' | 'submissions' | 'attendance'>('grades');
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [currentAttendance, setCurrentAttendance] = useState<Record<string, 'present' | 'late' | 'absent' | 'leave'>>({});
 
@@ -978,7 +979,6 @@ export default function App() {
                   { id: 'assignments', label: 'จัดการงาน', icon: LayoutDashboard },
                   { id: 'submissions', label: 'ตรวจงาน', icon: Monitor },
                   { id: 'attendance', label: 'เช็คชื่อ', icon: CheckCircle2 },
-                  { id: 'attendanceSummary', label: 'สรุปเช็คชื่อ', icon: Users },
                 ].map((tab) => {
                   const Icon = tab.icon;
                   const isActive = teacherTab === tab.id;
@@ -986,10 +986,18 @@ export default function App() {
                     ? (appData.submissions || []).filter(s => s.status === 'pending').length 
                     : 0;
 
+                  const handleClick = () => {
+                    if (tab.id === 'attendance') {
+                      window.open('https://check-in-pro.vercel.app/', '_blank');
+                    } else {
+                      setTeacherTab(tab.id as any);
+                    }
+                  };
+
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => setTeacherTab(tab.id as any)}
+                      onClick={handleClick}
                       className={`relative flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap min-w-fit ${
                         isActive ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-800'
                       }`}
@@ -1613,83 +1621,6 @@ export default function App() {
                 </div>
               </div>
             )}
-            {teacherTab === 'attendanceSummary' && (
-              <div className="space-y-6">
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 border border-indigo-100">
-                      <GraduationCap className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold text-slate-800">สรุปการมาเรียนปลายเทอม</h2>
-                      <p className="text-slate-500 font-medium text-sm">เกณฑ์: สาย 4 ครั้ง = ขาด 1 | ลา 2 ครั้ง = ขาด 1 | ขาดได้ไม่เกิน 13/64 ครั้ง</p>
-                    </div>
-                  </div>
-
-                  <div className="overflow-hidden border border-slate-100 rounded-2xl">
-                    <table className="w-full text-left border-collapse">
-                      <thead className="bg-slate-50">
-                        <tr className="italic">
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold">ชื่อ-นามสกุล</th>
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">มา</th>
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">สาย</th>
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">ขาด</th>
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">ลา</th>
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-indigo-500 font-black text-center">รวมขาดสะสม</th>
-                          <th className="p-4 text-[11px] uppercase tracking-wider text-slate-400 font-bold text-center">สถานะ</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50">
-                        {students.map(student => {
-                          const records = (appData.attendance || []).filter(r => r.studentId === student.studentId && r.courseKey === currentCourseKey);
-                          const counts = {
-                            present: records.filter(r => r.status === 'present').length,
-                            late: records.filter(r => r.status === 'late').length,
-                            absent: records.filter(r => r.status === 'absent').length,
-                            leave: records.filter(r => r.status === 'leave').length,
-                          };
-                          const effectiveAbsents = counts.absent + Math.floor(counts.late / 4) + Math.floor(counts.leave / 2);
-                          const isFailed = effectiveAbsents > 13;
-                          const isWarning = effectiveAbsents >= 10;
-
-                          return (
-                            <tr key={student.id} className="hover:bg-slate-50 transition-colors">
-                              <td className="p-4">
-                                <div className="font-bold text-slate-700">{student.name}</div>
-                                <div className="text-[10px] text-slate-400 font-mono italic">เรียนแล้ว {records.length} / 64 ครั้ง</div>
-                              </td>
-                              <td className="p-4 text-center font-mono text-emerald-600 font-bold">{counts.present}</td>
-                              <td className="p-4 text-center font-mono text-amber-600 font-bold">{counts.late}</td>
-                              <td className="p-4 text-center font-mono text-rose-600 font-bold">{counts.absent}</td>
-                              <td className="p-4 text-center font-mono text-indigo-600 font-bold">{counts.leave}</td>
-                              <td className="p-4 text-center">
-                                <span className={`text-xl font-black ${isFailed ? 'text-rose-600' : isWarning ? 'text-amber-500' : 'text-indigo-600'}`}>
-                                  {effectiveAbsents}
-                                </span>
-                                <span className="text-[10px] text-slate-300 ml-1">/ 13</span>
-                              </td>
-                              <td className="p-4 text-center">
-                                {isFailed ? (
-                                  <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">ไม่มีสิทธิ์สอบ</span>
-                                ) : isWarning ? (
-                                  <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">เริ่มเสี่ยง</span>
-                                ) : (
-                                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">ปกติ</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </motion.div>
-              </div>
-            )}
             {teacherTab === 'attendance' && (
               /* Attendance View */
               <div className="space-y-6">
@@ -2157,18 +2088,16 @@ export default function App() {
         <footer className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex flex-col md:flex-row justify-between gap-6">
             <div className="space-y-3">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Info className="w-5 h-5 text-indigo-600" />
+              <button 
+                onClick={() => setIsGradingCriteriaModalOpen(true)}
+                className="font-bold text-slate-800 flex items-center gap-2 hover:text-indigo-600 transition-colors group"
+              >
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-100 transition-colors">
+                  <Info className="w-5 h-5" />
+                </div>
                 เกณฑ์การตัดเกรด
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {GRADING_SCALE.map((s, i) => (
-                  <div key={i} className="text-xs flex justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <span className="text-slate-500 font-medium">≥ {s.min}</span>
-                    <span className="font-bold text-indigo-600">เกรด {s.grade}</span>
-                  </div>
-                ))}
-              </div>
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all" />
+              </button>
             </div>
             <div className="flex items-end">
               <div className="text-right space-y-1">
@@ -2357,6 +2286,91 @@ export default function App() {
                     </div>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Grading Criteria Modal */}
+      <AnimatePresence>
+        {isGradingCriteriaModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsGradingCriteriaModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white rounded-[40px] w-full max-w-lg shadow-2xl overflow-hidden border border-white"
+            >
+              {/* Modal Header */}
+              <div className="p-8 pb-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                    <Info className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-slate-800">เกณฑ์การตัดเกรด</h3>
+                    <p className="text-slate-400 font-medium">เกณฑ์มาตรฐานที่ใช้ในการประเมินผล</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsGradingCriteriaModalOpen(false)}
+                  className="p-3 hover:bg-slate-100 rounded-2xl transition-colors text-slate-400"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-8 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  {GRADING_SCALE.map((s, i) => (
+                    <motion.div 
+                      key={i}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      className="flex items-center justify-between p-5 rounded-3xl bg-slate-50 border border-slate-100 group hover:bg-indigo-50 hover:border-indigo-100 transition-all"
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 group-hover:text-indigo-400 transition-colors">คะแนนอย่างน้อย</span>
+                        <span className="text-xl font-black text-slate-700 group-hover:text-indigo-700 transition-colors">≥ {s.min}</span>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 group-hover:text-indigo-400 transition-colors">สรุปผลการเรียน</span>
+                        <span className="text-xl font-black text-indigo-600 group-hover:text-indigo-600 transition-colors">เกรด {s.grade}</span>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+                
+                <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100/50">
+                  <div className="flex gap-4">
+                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm shrink-0">
+                      <BookOpen className="w-5 h-5" />
+                    </div>
+                    <p className="text-sm text-indigo-800 leading-relaxed">
+                      คะแนนทั้งหมดจะถูกรวบรวมและประเมินผลตามเกณฑ์ที่กำหนดไว้อัตโนมัติ โดยอ้างอิงจากคะแนนเก็บและการสอบตามสัดส่วนของรายวิชา
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Modal Footer */}
+              <div className="p-8 pt-0">
+                <button 
+                  onClick={() => setIsGradingCriteriaModalOpen(false)}
+                  className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-4 rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-slate-200"
+                >
+                  รับทราบ
+                </button>
               </div>
             </motion.div>
           </div>
