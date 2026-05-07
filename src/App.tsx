@@ -252,7 +252,8 @@ export default function App() {
     onConfirm: () => void;
     confirmLabel?: string;
     cancelLabel?: string;
-    type?: 'danger' | 'warning' | 'info';
+    type?: 'danger' | 'warning' | 'info' | 'success';
+    isAlert?: boolean;
   }>({
     isOpen: false,
     title: '',
@@ -266,9 +267,21 @@ export default function App() {
     onConfirm: () => void;
     confirmLabel?: string;
     cancelLabel?: string;
-    type?: 'danger' | 'warning' | 'info';
+    type?: 'danger' | 'warning' | 'info' | 'success';
   }) => {
-    setConfirmModal({ ...config, isOpen: true });
+    setConfirmModal({ ...config, isOpen: true, isAlert: false });
+  };
+
+  const showAlert = (title: string, message: string, type: 'success' | 'info' | 'warning' | 'error' = 'info') => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {},
+      confirmLabel: 'ตกลง',
+      type: type === 'error' ? 'danger' : type,
+      isAlert: true
+    });
   };
   const [manageType, setManageType] = useState<'subject' | 'class' | 'assignment'>('subject');
   const [newItemName, setNewItemName] = useState('');
@@ -353,7 +366,7 @@ export default function App() {
     const handleMessage = (event: MessageEvent) => {
       if (event.data === 'OAUTH_AUTH_SUCCESS' || event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         setIsGoogleAuth(true);
-        alert('✅ เชื่อมต่อ Google Sheets สำเร็จ!');
+        showAlert('ยินดีด้วย!', '✅ เชื่อมต่อ Google Sheets สำเร็จ!', 'success');
       }
     };
     window.addEventListener('message', handleMessage);
@@ -363,7 +376,7 @@ export default function App() {
   const handleGoogleAuth = async () => {
     const popup = window.open('', 'GoogleOAuth', 'width=600,height=700');
     if (!popup) {
-      alert('กรุณาอนุญาตให้เปิดหน้าต่าง Pop-up เพื่อเชื่อมต่อ Google');
+      showAlert('แจ้งเตือน', 'กรุณาอนุญาตให้เปิดหน้าต่าง Pop-up เพื่อเชื่อมต่อ Google', 'warning');
       return;
     }
     popup.document.write('<div style="font-family:sans-serif;text-align:center;padding-top:100px;"><h2>กำลังเตรียมการเชื่อมต่อ Google...</h2><p>กรุณารอสักครู่</p></div>');
@@ -379,7 +392,7 @@ export default function App() {
     } catch (err) {
       console.error('Connection error:', err);
       popup.close();
-      alert(`ไม่สามารถเชื่อมต่อได้: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      showAlert('เกิดข้อผิดพลาด', `ไม่สามารถเชื่อมต่อได้: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     }
   };
 
@@ -390,9 +403,9 @@ export default function App() {
       console.error('Firebase Login Error:', err);
       // Give more specific error message to help the user fix deployment issues
       if (err.code === 'auth/unauthorized-domain') {
-        alert('❌ เข้าสู่ระบบไม่สำเร็จ: โดเมนนี้ยังไม่ได้ลงทะเบียนใน Firebase');
+        showAlert('เข้าสู่ระบบไม่สำเร็จ', '❌ เข้าสู่ระบบไม่สำเร็จ: โดเมนนี้ยังไม่ได้ลงทะเบียนใน Firebase', 'error');
       } else {
-        alert(`❌ เกิดข้อผิดพลาด: ${err.message}`);
+        showAlert('เกิดข้อผิดพลาด', `❌ เกิดข้อผิดพลาด: ${err.message}`, 'error');
       }
     }
   };
@@ -421,10 +434,10 @@ export default function App() {
       
       const data = await res.json();
       setSpreadsheetUrl(data.url);
-      alert('ซิงค์ข้อมูลไปยัง Google Sheets เรียบร้อยแล้ว!');
+      showAlert('สำเร็จ!', 'ซิงค์ข้อมูลไปยัง Google Sheets เรียบร้อยแล้ว!', 'success');
     } catch (err) {
       console.error('Sync error:', err);
-      alert(`เกิดข้อผิดพลาดในการซิงค์: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      showAlert('เกิดข้อผิดพลาด', `เกิดข้อผิดพลาดในการซิงค์: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     } finally {
       setIsSyncing(false);
     }
@@ -493,7 +506,7 @@ export default function App() {
       pdf.save(`รายงานคะแนน_${subject}_${classroom}.pdf`);
     } catch (error) {
       console.error('PDF Export Error:', error);
-      alert('เกิดข้อผิดพลาดในการสร้าง PDF');
+      showAlert('เกิดข้อผิดพลาด', 'เกิดข้อผิดพลาดในการสร้าง PDF', 'error');
     } finally {
       reportElement.style.display = 'none';
       setIsExporting(false);
@@ -528,7 +541,7 @@ export default function App() {
     
     const isTeacher = user?.email === 'watcharaphon_pa@t-tech.ac.th';
     if (!isTeacher) {
-      alert('⚠️ เฉพาะครูที่เข้าสู่ระบบเท่านั้นที่สามารถลบรายชื่อนักเรียนได้');
+      showAlert('เข้าถึงไม่ได้', '⚠️ เฉพาะครูที่เข้าสู่ระบบเท่านั้นที่สามารถลบรายชื่อนักเรียนได้', 'warning');
       return;
     }
 
@@ -629,7 +642,7 @@ export default function App() {
         await setDoc(doc(db, 'students', id), newStudent);
         count++;
       }
-      alert(`นำเข้าข้อมูลนักเรียน ${count} คน เรียบร้อยแล้ว`);
+      showAlert('สำเร็จ!', `นำเข้าข้อมูลนักเรียน ${count} คน เรียบร้อยแล้ว`, 'success');
     };
     reader.readAsText(file);
   };
@@ -692,7 +705,7 @@ export default function App() {
 
     if (!isGoogleAuth) {
       console.warn('Upload attempted without Google Auth');
-      alert('⚠️ กรุณาเชื่อมต่อ Google Drive ก่อนส่งงาน\n\nโหมดนักเรียนจำเป็นต้องให้อาจารย์เข้าสู่ระบบและ "เชื่อมต่อ Google Sheets" ก่อน เพื่อเปิดพื้นที่รับงานใน Drive');
+      showAlert('ยังเชื่อมต่อไม่ได้', '⚠️ กรุณาเชื่อมต่อ Google Drive ก่อนส่งงาน\n\nโหมดนักเรียนจำเป็นต้องให้อาจารย์เข้าสู่ระบบและ "เชื่อมต่อ Google Sheets" ก่อน เพื่อเปิดพื้นที่รับงานใน Drive', 'warning');
       e.target.value = ''; // Reset input
       return;
     }
@@ -735,10 +748,10 @@ export default function App() {
 
       await setDoc(doc(db, 'submissions', subId), newSubmission);
 
-      alert('✅ ส่งงานเรียบร้อยแล้ว!\nงานของคุณถูกบันทึกใน Google Drive ของอาจารย์เรียบร้อย');
+      showAlert('ส่งงานสำเร็จ!', '✅ ส่งงานเรียบร้อยแล้ว!\nงานของคุณถูกบันทึกใน Google Drive ของอาจารย์เรียบร้อย', 'success');
     } catch (err: any) {
       console.error('Final upload error:', err);
-      alert(`❌ เกิดข้อผิดพลาด: ${err.message || 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้'}\n\nกรุณาลองใหม่อีกครั้ง หรือติดต่ออาจารย์ผู้สอน`);
+      showAlert('เกิดข้อผิดพลาด', `❌ เกิดข้อผิดพลาด: ${err.message || 'ไม่สามารถติดต่อเซิร์ฟเวอร์ได้'}\n\nกรุณาลองใหม่อีกครั้ง หรือติดต่ออาจารย์ผู้สอน`, 'error');
     } finally {
       setIsUploading(prev => ({ ...prev, [assignmentId]: false }));
       if (e.target) e.target.value = ''; // Reset input to allow re-selection
@@ -804,7 +817,7 @@ export default function App() {
   const handleSaveAttendance = async () => {
     const isTeacher = user?.email === 'watcharaphon_pa@t-tech.ac.th';
     if (!isTeacher) {
-      alert('❌ เฉพาะอาจารย์ที่ได้รับอนุญาตเท่านั้นที่สามารถบันทึกข้อมูลได้');
+      showAlert('เข้าถึงไม่ได้', '❌ เฉพาะอาจารย์ที่ได้รับอนุญาตเท่านั้นที่สามารถบันทึกข้อมูลได้', 'error');
       return;
     }
 
@@ -823,10 +836,10 @@ export default function App() {
         return setDoc(doc(db, 'attendance', id), record);
       });
       await Promise.all(promises);
-      alert('✅ บันทึกการเช็คชื่อเรียบร้อยแล้ว');
+      showAlert('สำเร็จ!', '✅ บันทึกการเช็คชื่อเรียบร้อยแล้ว', 'success');
     } catch (err: any) {
       console.error('Attendance save error:', err);
-      alert(`❌ เกิดข้อผิดพลาดในการบันทึก: ${err.message || 'กรุณาตรวจสอบสิทธิ์การเข้าถึง'}`);
+      showAlert('เกิดข้อผิดพลาด', `❌ เกิดข้อผิดพลาดในการบันทึก: ${err.message || 'กรุณาตรวจสอบสิทธิ์การเข้าถึง'}`, 'error');
     } finally {
       setIsSyncing(false);
     }
@@ -1132,7 +1145,7 @@ export default function App() {
                       const url = new URL(window.location.href);
                       url.searchParams.set('portal', 'student');
                       navigator.clipboard.writeText(url.toString());
-                      alert('คัดลอกลิงก์สำหรับส่งให้นักเรียนเรียบร้อยแล้ว!');
+                      showAlert('คัดลอกลิงก์สำเร็จ', 'คัดลอกลิงก์สำหรับส่งให้นักเรียนเรียบร้อยแล้ว!', 'success');
                     }}
                     className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 px-6 py-3 rounded-2xl font-bold transition-all active:scale-95"
                   >
@@ -2452,9 +2465,10 @@ export default function App() {
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg ${
                   confirmModal.type === 'danger' ? 'bg-rose-500 shadow-rose-200' : 
                   confirmModal.type === 'warning' ? 'bg-amber-500 shadow-amber-200' : 
+                  confirmModal.type === 'success' ? 'bg-emerald-500 shadow-emerald-200' :
                   'bg-indigo-600 shadow-indigo-200'
                 }`}>
-                  <AlertCircle className="w-6 h-6" />
+                  {confirmModal.type === 'success' ? <CheckCircle2 className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
                 </div>
                 <div>
                   <h3 className="text-2xl font-bold text-slate-800">{confirmModal.title}</h3>
@@ -2462,18 +2476,20 @@ export default function App() {
               </div>
 
               <div className="p-8 pt-4">
-                <p className="text-slate-500 font-medium leading-relaxed">
+                <p className="text-slate-500 font-medium leading-relaxed whitespace-pre-line">
                   {confirmModal.message}
                 </p>
               </div>
 
               <div className="p-8 pt-0 flex gap-3">
-                <button 
-                  onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-                  className="flex-1 px-6 py-4 rounded-2xl font-bold text-slate-400 hover:bg-slate-50 transition-colors"
-                >
-                  {confirmModal.cancelLabel || 'ยกเลิก'}
-                </button>
+                {!confirmModal.isAlert && (
+                  <button 
+                    onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                    className="flex-1 px-6 py-4 rounded-2xl font-bold text-slate-400 hover:bg-slate-50 transition-colors"
+                  >
+                    {confirmModal.cancelLabel || 'ยกเลิก'}
+                  </button>
+                )}
                 <button 
                   onClick={() => {
                     confirmModal.onConfirm();
@@ -2482,10 +2498,11 @@ export default function App() {
                   className={`flex-1 px-6 py-4 rounded-2xl font-bold text-white transition-all active:scale-[0.98] shadow-lg ${
                     confirmModal.type === 'danger' ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-100' :
                     confirmModal.type === 'warning' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-100' :
+                    confirmModal.type === 'success' ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-100' :
                     'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100'
                   }`}
                 >
-                  {confirmModal.confirmLabel || 'ยืนยัน'}
+                  {confirmModal.confirmLabel || (confirmModal.isAlert ? 'ตกลง' : 'ยืนยัน')}
                 </button>
               </div>
             </motion.div>
