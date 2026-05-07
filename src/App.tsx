@@ -245,6 +245,31 @@ export default function App() {
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [isGradingCriteriaModalOpen, setIsGradingCriteriaModalOpen] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    type?: 'danger' | 'warning' | 'info';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const askConfirmation = (config: {
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    type?: 'danger' | 'warning' | 'info';
+  }) => {
+    setConfirmModal({ ...config, isOpen: true });
+  };
   const [manageType, setManageType] = useState<'subject' | 'class' | 'assignment'>('subject');
   const [newItemName, setNewItemName] = useState('');
   const [newAssignmentDesc, setNewAssignmentDesc] = useState('');
@@ -430,8 +455,14 @@ export default function App() {
   };
 
   const deleteNote = async (id: string) => {
-    if (!window.confirm('ยืนยันการลบโน๊ตนี้?')) return;
-    await deleteDoc(doc(db, 'teacherNotes', id));
+    askConfirmation({
+      title: 'ลบโน๊ตส่วนตัว',
+      message: 'ยืนยันการลบโน๊ตนี้? การดำเนินการนี้ไม่สามารถย้อนกลับได้',
+      type: 'danger',
+      onConfirm: async () => {
+        await deleteDoc(doc(db, 'teacherNotes', id));
+      }
+    });
   };
 
   const exportToPDF = async () => {
@@ -501,16 +532,20 @@ export default function App() {
       return;
     }
 
-    if (window.confirm(`⚠️ คำเตือน: คุณกำลังจะลบรายชื่อนักเรียนทั้งหมดในห้องนี้ (${students.length} คน)\n\nการดำเนินการนี้ไม่สามารถย้อนกลับได้ ยืนยันที่จะลบหรือไม่?`)) {
-      try {
-        const promises = students.map(s => deleteDoc(doc(db, 'students', s.id)));
-        await Promise.all(promises);
-        alert('✅ ลบรายชื่อนักเรียนทั้งหมดเรียบร้อยแล้ว');
-      } catch (err: any) {
-        console.error('Error removing all students:', err);
-        alert(`❌ เกิดข้อผิดพลาด: ${err.message || 'ไม่สามารถลบข้อมูลได้'}`);
+    askConfirmation({
+      title: 'แจ้งเตือนสำคัญ!',
+      message: `คุณกำลังจะลบรายชื่อนักเรียนทั้งหมดในห้องนี้ (${students.length} คน) การดำเนินการนี้ไม่สามารถย้อนกลับได้ ยืนยันที่จะลบหรือไม่?`,
+      type: 'danger',
+      onConfirm: async () => {
+        try {
+          const promises = students.map(s => deleteDoc(doc(db, 'students', s.id)));
+          await Promise.all(promises);
+          // replace alert with a better UI or just leave it for now if requested
+        } catch (err: any) {
+          console.error('Error removing all students:', err);
+        }
       }
-    }
+    });
   };
 
   const updateStudent = async (id: string, field: string, value: any) => {
@@ -634,14 +669,19 @@ export default function App() {
   };
 
   const removeAssignment = async (id: string) => {
-    if (window.confirm('ยืนยันการลบงาน? ข้อมูลการส่งงานจะหายไปด้วย')) {
-      await deleteDoc(doc(db, 'assignments', id));
-      // Optionally delete submissions for this assignment as well
-      const toDelete = (appData.submissions || []).filter(s => s.assignmentId === id);
-      for (const sub of toDelete) {
-        await deleteDoc(doc(db, 'submissions', sub.id));
+    askConfirmation({
+      title: 'ลบงาน',
+      message: 'ยืนยันการลบงาน? ข้อมูลการส่งงานจะหายไปด้วย',
+      type: 'danger',
+      onConfirm: async () => {
+        await deleteDoc(doc(db, 'assignments', id));
+        // Optionally delete submissions for this assignment as well
+        const toDelete = (appData.submissions || []).filter(s => s.assignmentId === id);
+        for (const sub of toDelete) {
+          await deleteDoc(doc(db, 'submissions', sub.id));
+        }
       }
-    }
+    });
   };
 
   const handleStudentFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, assignmentId: string, student: Student) => {
@@ -733,22 +773,32 @@ export default function App() {
 
   const removeSubject = async (id: string) => {
     if ((appData.subjects || []).length <= 1) return;
-    if (window.confirm('ยืนยันการลบวิชา? ข้อมูลนักเรียนและงานทั้งหมดในวิชานี้จะยังคงอยู่ในฐานข้อมูลแต่อาจเข้าถึงยากขึ้น')) {
-      await deleteDoc(doc(db, 'subjects', id));
-      if (selectedSubjectId === id) {
-        setSelectedSubjectId(appData.subjects.find(s => s.id !== id)?.id || '');
+    askConfirmation({
+      title: 'ลบวิชา',
+      message: 'ยืนยันการลบวิชา? ข้อมูลนักเรียนและงานทั้งหมดในวิชานี้จะยังคงอยู่ในฐานข้อมูลแต่อาจเข้าถึงยากขึ้น',
+      type: 'warning',
+      onConfirm: async () => {
+        await deleteDoc(doc(db, 'subjects', id));
+        if (selectedSubjectId === id) {
+          setSelectedSubjectId(appData.subjects.find(s => s.id !== id)?.id || '');
+        }
       }
-    }
+    });
   };
 
   const removeClass = async (id: string) => {
     if ((appData.classRooms || []).length <= 1) return;
-    if (window.confirm('ยืนยันการลบห้องเรียน?')) {
-      await deleteDoc(doc(db, 'classRooms', id));
-      if (selectedClassId === id) {
-        setSelectedClassId(appData.classRooms.find(c => c.id !== id)?.id || '');
+    askConfirmation({
+      title: 'ลบห้องเรียน',
+      message: 'ยืนยันการลบห้องเรียน?',
+      type: 'warning',
+      onConfirm: async () => {
+        await deleteDoc(doc(db, 'classRooms', id));
+        if (selectedClassId === id) {
+          setSelectedClassId(appData.classRooms.find(c => c.id !== id)?.id || '');
+        }
       }
-    }
+    });
   };
 
   const handleSaveAttendance = async () => {
@@ -926,7 +976,12 @@ export default function App() {
                               {students.length > 0 && (
                                 <button 
                                   onClick={() => {
-                                    if(window.confirm('⚠️ ยืนยันการลบรายชื่อนักเรียนทั้งหมดในวิชานี้?')) removeAllStudents();
+                                    askConfirmation({
+                                      title: 'ลบรายชื่อนักเรียน',
+                                      message: '⚠️ ยืนยันการลบรายชื่อนักเรียนทั้งหมดในวิชานี้? การดำเนินการนี้ไม่สามารถย้อนกลับได้',
+                                      type: 'danger',
+                                      onConfirm: removeAllStudents
+                                    });
                                     setIsActionsMenuOpen(false);
                                   }}
                                   className="w-full flex items-center gap-3 px-5 py-3 hover:bg-rose-50 text-rose-600 text-sm transition-colors text-left"
@@ -2376,6 +2431,68 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {confirmModal.isOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white rounded-[40px] w-full max-w-md shadow-2xl overflow-hidden border border-white"
+            >
+              <div className="p-8 pb-4 flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg ${
+                  confirmModal.type === 'danger' ? 'bg-rose-500 shadow-rose-200' : 
+                  confirmModal.type === 'warning' ? 'bg-amber-500 shadow-amber-200' : 
+                  'bg-indigo-600 shadow-indigo-200'
+                }`}>
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-800">{confirmModal.title}</h3>
+                </div>
+              </div>
+
+              <div className="p-8 pt-4">
+                <p className="text-slate-500 font-medium leading-relaxed">
+                  {confirmModal.message}
+                </p>
+              </div>
+
+              <div className="p-8 pt-0 flex gap-3">
+                <button 
+                  onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 px-6 py-4 rounded-2xl font-bold text-slate-400 hover:bg-slate-50 transition-colors"
+                >
+                  {confirmModal.cancelLabel || 'ยกเลิก'}
+                </button>
+                <button 
+                  onClick={() => {
+                    confirmModal.onConfirm();
+                    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                  }}
+                  className={`flex-1 px-6 py-4 rounded-2xl font-bold text-white transition-all active:scale-[0.98] shadow-lg ${
+                    confirmModal.type === 'danger' ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-100' :
+                    confirmModal.type === 'warning' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-100' :
+                    'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100'
+                  }`}
+                >
+                  {confirmModal.confirmLabel || 'ยืนยัน'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Hidden PDF Template */}
       <div id="grade-report-pdf" style={{ display: 'none', position: 'absolute', left: '-9999px', width: '210mm', padding: '20mm', backgroundColor: 'white', color: '#1e293b', fontFamily: 'sans-serif' }}>
         <div style={{ textAlign: 'center', marginBottom: '30px' }}>
