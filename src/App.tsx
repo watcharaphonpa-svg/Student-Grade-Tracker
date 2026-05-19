@@ -323,7 +323,7 @@ export default function App() {
     }
   }, []);
 
-  const [teacherTab, setTeacherTab] = useState<'grades' | 'assignments' | 'submissions' | 'attendance'>('grades');
+  const [teacherTab, setTeacherTab] = useState<'dashboard' | 'grades' | 'assignments' | 'submissions' | 'attendance'>('dashboard');
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [currentAttendance, setCurrentAttendance] = useState<Record<string, 'present' | 'late' | 'absent' | 'leave'>>({});
 
@@ -1041,10 +1041,11 @@ export default function App() {
               className="flex flex-col xl:flex-row xl:items-center justify-between gap-6"
             >
               {/* Tab Navigation */}
-              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/60 shadow-sm overflow-x-auto no-scrollbar max-w-full">
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/60 shadow-sm overflow-x-auto no-scrollbar max-w-full">
                 {[
+                  { id: 'dashboard', label: 'หน้าแรก', icon: LayoutDashboard },
                   { id: 'grades', label: 'ตารางคะแนน', icon: Calculator },
-                  { id: 'assignments', label: 'จัดการงาน', icon: LayoutDashboard },
+                  { id: 'assignments', label: 'จัดการงาน', icon: FileText },
                   { id: 'submissions', label: 'ตรวจงาน', icon: Monitor },
                   { id: 'attendance', label: 'เช็คชื่อ', icon: CheckCircle2 },
                 ].map((tab) => {
@@ -1125,6 +1126,115 @@ export default function App() {
                 </div>
               </div>
             </motion.div>
+
+            {teacherTab === 'dashboard' && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-12"
+              >
+                <div className="flex items-center justify-between">
+                   <h2 className="text-3xl font-black text-slate-800">รายวิชาทั้งหมด</h2>
+                   <button 
+                     onClick={() => { setManageType('subject'); setIsManageModalOpen(true); }}
+                     className="flex items-center gap-2 bg-white text-slate-700 px-6 py-3 rounded-2xl font-bold border border-slate-200 shadow-sm hover:bg-slate-50 transition-all active:scale-95"
+                   >
+                     <Plus className="w-5 h-5 text-indigo-500" />
+                     เพิ่มรายวิชาใหม่
+                   </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {appData.subjects.map(subject => {
+                    const subjectClassrooms = appData.classRooms; 
+                    return subjectClassrooms.map(classroom => {
+                      const courseKey = `${subject.id}-${classroom.id}`;
+                      const studentCount = appData.courses[courseKey]?.length || 0;
+                      
+                      return (
+                        <motion.div 
+                          key={courseKey}
+                          whileHover={{ y: -8, scale: 1.02 }}
+                          className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-100/50 overflow-hidden group cursor-pointer"
+                          onClick={() => {
+                            setSelectedSubjectId(subject.id);
+                            setSelectedClassId(classroom.id);
+                            setTeacherTab('grades');
+                          }}
+                        >
+                          <div className="p-8 space-y-6 relative">
+                            <div className="absolute top-0 right-0 -tr-12 -mt-12 w-48 h-48 bg-indigo-50/50 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity" />
+                            
+                            <div className="flex items-start justify-between relative">
+                              <div className="p-4 bg-indigo-50 text-indigo-600 rounded-3xl shadow-sm group-hover:bg-indigo-600 group-hover:text-white transition-all duration-500">
+                                <BookOpen className="w-8 h-8" />
+                              </div>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setManageType('subject');
+                                  setIsManageModalOpen(true);
+                                }}
+                                className="p-3 hover:bg-slate-100 rounded-2xl transition-colors text-slate-300"
+                              >
+                                <Settings className="w-5 h-5" />
+                              </button>
+                            </div>
+
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em]">Course Code: {subject.id}</p>
+                              <h3 className="text-2xl font-black text-slate-800 leading-tight">
+                                {subject.name}
+                              </h3>
+                              <p className="text-slate-400 font-bold flex items-center gap-2">
+                                <Users className="w-4 h-4" />
+                                {classroom.name}
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
+                              <div className="space-y-1">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">นักเรียน</p>
+                                <p className="text-xl font-black text-slate-800">{studentCount} คน</p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">สรุปผล</p>
+                                <p className="text-xl font-black text-slate-800">คลิกดู</p>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between group-hover:bg-indigo-50 transition-colors">
+                            <span className="text-sm font-bold text-slate-500 group-hover:text-indigo-600">เข้าสู่ระบบจัดการคะแนน</span>
+                            <div className="p-2 bg-white rounded-xl shadow-sm text-slate-300 group-hover:text-indigo-600 transition-colors">
+                              <ChevronRight className="w-4 h-4" />
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    });
+                  })}
+
+                  {appData.subjects.length === 0 && (
+                     <div className="col-span-full py-20 text-center space-y-6">
+                        <div className="w-24 h-24 bg-slate-100 rounded-[2.5rem] flex items-center justify-center mx-auto text-slate-300">
+                          <LayoutDashboard className="w-12 h-12" />
+                        </div>
+                        <div className="space-y-2">
+                          <h3 className="text-2xl font-black text-slate-800">ยังไม่มีรายวิชาในระบบ</h3>
+                          <p className="text-slate-400 font-medium">เริ่มต้นด้วยการเพิ่มรายวิชาและห้องเรียนที่คุณสอน</p>
+                        </div>
+                        <button 
+                          onClick={() => { setManageType('subject'); setIsManageModalOpen(true); }}
+                          className="bg-indigo-600 text-white px-8 py-4 rounded-[2rem] font-black shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95"
+                        >
+                          สร้างวิชาแรกของคุณ
+                        </button>
+                     </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
 
             {teacherTab === 'grades' && (
               <motion.div 

@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
@@ -9,9 +8,6 @@ import { Readable } from "stream";
 import fs from "fs";
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
@@ -292,20 +288,5 @@ function getGrade(t: number) {
   if (t >= 50) return "1.0"; return "0";
 }
 
-async function startServer() {
-  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
-    app.use(vite.middlewares);
-  } else if (!process.env.VERCEL) {
-    const distPath = path.join(process.cwd(), "dist");
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      app.get("*", (r, s) => s.sendFile(path.join(distPath, "index.html")));
-    }
-  }
-  if (!process.env.VERCEL) app.listen(PORT, "0.0.0.0", () => console.log(`Server on ${PORT}`));
-}
-startServer();
-
+// export default app;
 export default app;
