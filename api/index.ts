@@ -274,17 +274,23 @@ app.post("/api/drive/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+const UPLOADS_DIR = "/tmp/uploads";
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
 // Upload teaching materials - Supports both Google Drive (when authorized) and Local server storage as fallback
 app.post("/api/drive/upload-material", upload.single("file"), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "Missing file" });
+  if (!req.file) {
+    console.error("Upload Material: No file present in request.");
+    return res.status(400).json({ error: "No file was uploaded." });
+  }
+
+  console.log(`Upload Material: Received file '${req.file.originalname}' (${req.file.size} bytes, type: ${req.file.mimetype})`);
 
   const tokensStr = req.cookies.google_tokens;
   if (!tokensStr) {
+    console.log("Upload Material: No Google tokens found. Depositing to local storage fallback...");
     // Local fallback when not logged in to Google Workspace
     try {
       const filename = `${Date.now()}_${req.file.originalname}`;
@@ -295,8 +301,10 @@ app.post("/api/drive/upload-material", upload.single("file"), async (req, res) =
       const host = req.headers.host;
       const downloadUrl = `${protocol}://${host}/api/uploads/${encodeURIComponent(filename)}`;
 
+      console.log(`Upload Material: Successfully saved locally at '${filePath}'. URL: ${downloadUrl}`);
       return res.json({ success: true, url: downloadUrl, isLocal: true });
     } catch (err: any) {
+      console.error("Upload Material: Local file saving failed.", err);
       return res.status(500).json({ error: `Local file saving failed: ${err.message}` });
     }
   }
@@ -308,11 +316,14 @@ app.post("/api/drive/upload-material", upload.single("file"), async (req, res) =
     client.setCredentials(tokens);
     const drive = google.drive({ version: "v3", auth: client });
 
+    console.log("Upload Material: Attempting Google Drive upload...");
     const file = await drive.files.create({
       requestBody: { name: req.file.originalname },
       media: { mimeType: req.file.mimetype, body: Readable.from(req.file.buffer) },
-      fields: "id, webViewLink, webContentLink",
+      fields: "id, webViewLink",
     });
+
+    console.log(`Upload Material: Drive file created with ID: ${file.data.id}`);
 
     // Make the material public so students can access it
     try {
@@ -323,20 +334,16 @@ app.post("/api/drive/upload-material", upload.single("file"), async (req, res) =
           type: "anyone",
         },
       });
-    } catch (permError) {
-      console.warn("Unable to make Drive file public:", permError);
+      console.log("Upload Material: File made public to anyone with link.");
+    } catch (permError: any) {
+      console.warn("Upload Material: Unable to make Drive file public:", permError.message);
     }
 
-    // Retrieve again to get clean links if possible
-    const updatedFile = await drive.files.get({
-      fileId: file.data.id!,
-      fields: "webViewLink, webContentLink",
-    });
-
-    const downloadUrl = updatedFile.data.webViewLink || file.data.webViewLink;
+    const downloadUrl = file.data.webViewLink;
+    console.log(`Upload Material: Google Drive upload successful. Link: ${downloadUrl}`);
     res.json({ success: true, fileId: file.data.id, url: downloadUrl, isLocal: false });
   } catch (error: any) {
-    console.warn("Google Drive upload failed, falling back to local storage:", error.message);
+    console.warn(`Upload Material: Google Drive upload failed (${error.message}). Falling back to local storage...`);
     // Google Drive fail fallback -> local upload
     try {
       const filename = `${Date.now()}_${req.file.originalname}`;
@@ -347,9 +354,11 @@ app.post("/api/drive/upload-material", upload.single("file"), async (req, res) =
       const host = req.headers.host;
       const downloadUrl = `${protocol}://${host}/api/uploads/${encodeURIComponent(filename)}`;
 
+      console.log(`Upload Material Fallback: Successfully saved locally at '${filePath}' after GDrive fail. URL: ${downloadUrl}`);
       return res.json({ success: true, url: downloadUrl, isLocal: true, warn: error.message });
     } catch (err: any) {
-      res.status(500).json({ error: error.message });
+      console.error("Upload Material: Both Google Drive and Local Storage fallback failed.", err);
+      res.status(500).json({ error: `Upload failed. Drive error: ${error.message} | Local storage error: ${err.message}` });
     }
   }
 });
