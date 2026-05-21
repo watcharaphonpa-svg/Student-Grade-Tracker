@@ -989,13 +989,8 @@ export default function App() {
                               {students.length > 0 && (
                                 <button 
                                   onClick={() => {
-                                    askConfirmation({
-                                      title: 'ลบรายชื่อนักเรียน',
-                                      message: '⚠️ ยืนยันการลบรายชื่อนักเรียนทั้งหมดในวิชานี้? การดำเนินการนี้ไม่สามารถย้อนกลับได้',
-                                      type: 'danger',
-                                      onConfirm: removeAllStudents
-                                    });
                                     setIsActionsMenuOpen(false);
+                                    removeAllStudents();
                                   }}
                                   className="w-full flex items-center gap-3 px-5 py-3 hover:bg-rose-50 text-rose-600 text-sm transition-colors text-left"
                                 >
