@@ -472,6 +472,22 @@ export default function App() {
   // Student Portal State
   const [searchId, setSearchId] = useState('');
   const [foundStudent, setFoundStudent] = useState<Student | null>(null);
+
+  const matchingStudentRecords = useMemo(() => {
+    if (!foundStudent?.studentId) return [];
+    const matched: Student[] = [];
+    const seenCourseKeys = new Set<string>();
+    for (const key in (appData.courses || {})) {
+      const records = (appData.courses || {})[key] || [];
+      const s = records.find(item => item.studentId.trim().toLowerCase() === foundStudent.studentId.trim().toLowerCase());
+      if (s && !seenCourseKeys.has(s.courseKey)) {
+        seenCourseKeys.add(s.courseKey);
+        matched.push(s);
+      }
+    }
+    return matched;
+  }, [appData.courses, foundStudent?.studentId]);
+
   const [hasSearched, setHasSearched] = useState(false);
   const [studentFilterSubjectId, setStudentFilterSubjectId] = useState('');
   const [studentFilterClassId, setStudentFilterClassId] = useState('');
@@ -1036,10 +1052,13 @@ export default function App() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setHasSearched(true);
+    const cleanId = searchId.trim().toLowerCase();
     // Search across all courses
     let found: Student | null = null;
     for (const key in (appData.courses || {})) {
-      const student = (appData.courses || {})[key].find(s => s.studentId === searchId);
+      const student = (appData.courses || {})[key].find(
+        s => s.studentId.trim().toLowerCase() === cleanId
+      );
       if (student) {
         found = student;
         break;
@@ -2450,9 +2469,53 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="space-y-1">
+                      <div className="space-y-1 text-left">
                         <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">Authenticated Student</p>
                         <h3 className="text-4xl font-black text-slate-800 leading-tight tracking-tight">{foundStudent.name}</h3>
+                        
+                        {/* Course Selector Tabs - Dynamic switcher for multi-subject students */}
+                        {matchingStudentRecords.length > 1 ? (
+                          <div className="space-y-2 mt-3 text-left">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">สลับวิชาเพื่อแสดงผลคะแนนและสื่อการเรียนสอน:</span>
+                            <div className="flex flex-wrap gap-2">
+                              {matchingStudentRecords.map(record => {
+                                const [subId, clsId] = record.courseKey.split('-');
+                                const subjectName = appData.subjects.find(s => s.id === subId)?.name || 'วิชาเรียน';
+                                const className = appData.classRooms.find(c => c.id === clsId)?.name || 'ห้องเรียน';
+                                const isActive = record.courseKey === foundStudent.courseKey;
+                                return (
+                                  <button
+                                    key={record.id}
+                                    type="button"
+                                    onClick={() => setFoundStudent(record)}
+                                    className={`px-3 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border flex items-center gap-1.5 ${
+                                      isActive
+                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100 scale-105'
+                                        : 'bg-white hover:bg-slate-50 text-slate-650 border-slate-205'
+                                    }`}
+                                  >
+                                    <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-white animate-pulse' : 'bg-slate-300'}`} />
+                                    {subjectName} ({className})
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          (() => {
+                            const [subId, clsId] = foundStudent.courseKey.split('-');
+                            const subjectName = appData.subjects.find(s => s.id === subId)?.name || '';
+                            const className = appData.classRooms.find(c => c.id === clsId)?.name || '';
+                            return (
+                              <div className="mt-2 text-left">
+                                <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-xl inline-block">
+                                  วิชาเรียน: {subjectName} ({className})
+                                </span>
+                              </div>
+                            );
+                          })()
+                        )}
+
                         <div className="flex flex-wrap items-center gap-4 mt-3">
                           <div className="flex items-center gap-3 bg-slate-100/80 px-4 py-2 rounded-2xl border border-slate-200/50">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ID</span>
