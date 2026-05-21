@@ -274,6 +274,96 @@ app.post("/api/drive/upload", upload.single("file"), async (req, res) => {
   }
 });
 
+const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Upload teaching materials - Supports both Google Drive (when authorized) and Local server storage as fallback
+app.post("/api/drive/upload-material", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Missing file" });
+
+  const tokensStr = req.cookies.google_tokens;
+  if (!tokensStr) {
+    // Local fallback when not logged in to Google Workspace
+    try {
+      const filename = `${Date.now()}_${req.file.originalname}`;
+      const filePath = path.join(UPLOADS_DIR, filename);
+      fs.writeFileSync(filePath, req.file.buffer);
+
+      const protocol = req.headers["x-forwarded-proto"] || "https";
+      const host = req.headers.host;
+      const downloadUrl = `${protocol}://${host}/api/uploads/${encodeURIComponent(filename)}`;
+
+      return res.json({ success: true, url: downloadUrl, isLocal: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: `Local file saving failed: ${err.message}` });
+    }
+  }
+
+  // Google Drive upload when authenticated
+  try {
+    const tokens = JSON.parse(tokensStr);
+    const client = getOAuth2Client(req);
+    client.setCredentials(tokens);
+    const drive = google.drive({ version: "v3", auth: client });
+
+    const file = await drive.files.create({
+      requestBody: { name: req.file.originalname },
+      media: { mimeType: req.file.mimetype, body: Readable.from(req.file.buffer) },
+      fields: "id, webViewLink, webContentLink",
+    });
+
+    // Make the material public so students can access it
+    try {
+      await drive.permissions.create({
+        fileId: file.data.id!,
+        requestBody: {
+          role: "reader",
+          type: "anyone",
+        },
+      });
+    } catch (permError) {
+      console.warn("Unable to make Drive file public:", permError);
+    }
+
+    // Retrieve again to get clean links if possible
+    const updatedFile = await drive.files.get({
+      fileId: file.data.id!,
+      fields: "webViewLink, webContentLink",
+    });
+
+    const downloadUrl = updatedFile.data.webViewLink || file.data.webViewLink;
+    res.json({ success: true, fileId: file.data.id, url: downloadUrl, isLocal: false });
+  } catch (error: any) {
+    console.warn("Google Drive upload failed, falling back to local storage:", error.message);
+    // Google Drive fail fallback -> local upload
+    try {
+      const filename = `${Date.now()}_${req.file.originalname}`;
+      const filePath = path.join(UPLOADS_DIR, filename);
+      fs.writeFileSync(filePath, req.file.buffer);
+
+      const protocol = req.headers["x-forwarded-proto"] || "https";
+      const host = req.headers.host;
+      const downloadUrl = `${protocol}://${host}/api/uploads/${encodeURIComponent(filename)}`;
+
+      return res.json({ success: true, url: downloadUrl, isLocal: true, warn: error.message });
+    } catch (err: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Download endpoint for local upload fallback
+app.get("/api/uploads/:filename", (req, res) => {
+  const filepath = path.join(UPLOADS_DIR, req.params.filename);
+  if (fs.existsSync(filepath)) {
+    res.sendFile(filepath);
+  } else {
+    res.status(404).send("File not found");
+  }
+});
+
 function calculateTotal(s: any) {
   const a1 = (s.assignment1?.part1 || 0) + (s.assignment1?.part2 || 0) + (s.assignment1?.part3 || 0);
   const a2 = (s.assignment2?.part1 || 0) + (s.assignment2?.part2 || 0) + (s.assignment2?.part3 || 0);

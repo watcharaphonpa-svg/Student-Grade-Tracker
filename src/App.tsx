@@ -320,6 +320,7 @@ export default function App() {
   const currentAssignments = useMemo(() => (appData.assignments || []).filter(a => a.courseKey === currentCourseKey), [appData.assignments, currentCourseKey]);
 
   const [isUploading, setIsUploading] = useState<Record<string, boolean>>({});
+  const [submissionScores, setSubmissionScores] = useState<Record<string, string>>({});
 
   const setStudents = (newStudents: Student[]) => {
     setAppData(prev => ({
@@ -345,6 +346,57 @@ export default function App() {
   const [newMaterialDesc, setNewMaterialDesc] = useState('');
   const [newMaterialUrl, setNewMaterialUrl] = useState('');
   const [newMaterialType, setNewMaterialType] = useState<'pdf' | 'doc' | 'link' | 'video' | 'image'>('link');
+  const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
+
+  const handleMaterialFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingMaterial(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/drive/upload-material', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Upload failed');
+      }
+
+      const data = await res.json();
+      setNewMaterialUrl(data.url);
+      
+      // Auto-detect type based on extension
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (ext === 'pdf') {
+        setNewMaterialType('pdf');
+      } else if (['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'].includes(ext || '')) {
+        setNewMaterialType('doc');
+      } else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext || '')) {
+        setNewMaterialType('image');
+      } else if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext || '')) {
+        setNewMaterialType('video');
+      }
+
+      // Auto-populate title if empty
+      if (!newMaterialTitle.trim()) {
+        const cleanName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+        setNewMaterialTitle(cleanName);
+      }
+
+      showAlert('อัปโหลดไฟล์สำเร็จ!', '✅ ไฟล์สื่อการสอนได้รับการอัปโหลดเรียบร้อยและนำมาแปลงเป็นลิงก์ให้โดยอัตโนมัติแล้วครับ', 'success');
+    } catch (err: any) {
+      console.error('Material upload error:', err);
+      showAlert('อัปโหลดล้มเหลว', `❌ ไม่สามารถอัปโหลดไฟล์ได้: ${err.message}`, 'error');
+    } finally {
+      setIsUploadingMaterial(false);
+      e.target.value = '';
+    }
+  };
 
   const addMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1179,11 +1231,7 @@ export default function App() {
                     : 0;
 
                   const handleClick = () => {
-                    if (tab.id === 'attendance') {
-                      window.open('https://check-in-pro.vercel.app/', '_blank');
-                    } else {
-                      setTeacherTab(tab.id as any);
-                    }
+                    setTeacherTab(tab.id as any);
                   };
 
                   return (
@@ -1497,97 +1545,102 @@ export default function App() {
                                   exit={{ opacity: 0 }}
                                   className="hover:bg-slate-50/30 transition-colors group"
                                 >
-                                  <td className="p-4">
+                                  <td className="p-2">
                                     <input 
                                       type="text" 
                                       value={student.no}
                                       onChange={(e) => updateStudent(student.id, 'no', e.target.value)}
-                                      className="w-full bg-transparent border-none focus:ring-0 text-slate-600 font-medium text-center"
+                                      className="w-12 mx-auto bg-transparent border border-transparent hover:border-slate-200 focus:bg-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg py-1 text-center outline-none transition-all duration-200 text-slate-600 font-bold"
                                     />
                                   </td>
-                                  <td className="p-4">
+                                  <td className="p-2">
                                     <input 
                                       type="text" 
                                       placeholder="รหัส..."
                                       value={student.studentId}
                                       onChange={(e) => updateStudent(student.id, 'studentId', e.target.value)}
-                                      className="w-full bg-transparent border-none focus:ring-0 text-slate-600"
+                                      className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-2 py-1 outline-none transition-all duration-200 text-slate-600 font-mono font-medium text-sm"
                                     />
                                   </td>
-                                  <td className="p-4">
+                                  <td className="p-2">
                                     <input 
                                       type="text" 
                                       placeholder="ชื่อ-นามสกุล..."
                                       value={student.name}
                                       onChange={(e) => updateStudent(student.id, 'name', e.target.value)}
-                                      className="w-full bg-transparent border-none focus:ring-0 font-medium"
+                                      className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-indigo-50/40 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-3 py-1.5 outline-none transition-all duration-200 font-bold text-slate-800"
                                     />
                                   </td>
-                                  <td className="p-4 text-center">
+                                  <td className="p-2 text-center">
                                     <input 
                                       type="number" 
                                       value={student.behavior}
                                       max={10}
                                       onChange={(e) => updateStudent(student.id, 'behavior', e.target.value)}
-                                      className="w-16 bg-slate-100/50 border border-slate-200 rounded-lg px-2 py-1 text-center focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                      className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
                                     />
                                   </td>
-                                  <td className="p-4 text-center">
+                                  <td className="p-2 text-center">
                                     <input 
                                       type="number" 
                                       value={student.attendance}
                                       max={10}
                                       onChange={(e) => updateStudent(student.id, 'attendance', e.target.value)}
-                                      className="w-16 bg-slate-100/50 border border-slate-200 rounded-lg px-2 py-1 text-center focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                      className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
                                     />
                                   </td>
-                                  <td className="p-4 text-center">
+                                  <td className="p-2 text-center">
                                     <button 
                                       onClick={() => toggleExpand(student.id)}
-                                      className="flex items-center justify-center gap-1 mx-auto bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-sm font-semibold hover:bg-indigo-100 transition-colors"
+                                      className="flex items-center justify-center gap-1.5 mx-auto bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95"
                                     >
-                                      {(() => {
+                                      <span className="font-mono">{(() => {
                                         return (student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0) +
                                                (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0) +
                                                (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0);
-                                      })()}
-                                      {isExp ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                      })()}</span>
+                                      {isExp ? <ChevronDown className="w-3.5 h-3.5 text-indigo-500" /> : <ChevronRight className="w-3.5 h-3.5 text-indigo-500" />}
                                     </button>
                                   </td>
-                                  <td className="p-4 text-center">
+                                  <td className="p-2 text-center">
                                     <input 
                                       type="number" 
                                       value={student.midterm}
                                       max={15}
                                       onChange={(e) => updateStudent(student.id, 'midterm', e.target.value)}
-                                      className="w-16 bg-slate-100/50 border border-slate-200 rounded-lg px-2 py-1 text-center focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                      className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
                                     />
                                   </td>
-                                  <td className="p-4 text-center">
+                                  <td className="p-2 text-center">
                                     <input 
                                       type="number" 
                                       value={student.final}
                                       max={20}
                                       onChange={(e) => updateStudent(student.id, 'final', e.target.value)}
-                                      className="w-16 bg-slate-100/50 border border-slate-200 rounded-lg px-2 py-1 text-center focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                      className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
                                     />
                                   </td>
-                                  <td className="p-4 text-center font-bold text-indigo-600 text-lg">
+                                  <td className="p-2 text-center font-black text-indigo-650 text-base font-mono">
                                     {total}
                                   </td>
-                                  <td className="p-4 text-center">
-                                    <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-                                      Number(grade) >= 3 ? 'bg-emerald-100 text-emerald-700' : 
-                                      Number(grade) >= 1 ? 'bg-amber-100 text-amber-700' : 
-                                      'bg-rose-100 text-rose-700'
+                                  <td className="p-2 text-center">
+                                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black shadow-xs ${
+                                      Number(grade) >= 3 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50' : 
+                                      Number(grade) >= 1 ? 'bg-amber-50 text-amber-700 border border-amber-200/50' : 
+                                      'bg-rose-50 text-rose-700 border border-rose-250'
                                     }`}>
-                                      {grade}
+                                      <span className={`w-1.5 h-1.5 rounded-full ${
+                                        Number(grade) >= 3 ? 'bg-emerald-500' : 
+                                        Number(grade) >= 1 ? 'bg-amber-550' : 
+                                        'bg-rose-500'
+                                      }`} />
+                                      เกรด {grade}
                                     </span>
                                   </td>
-                                  <td className="p-4">
+                                  <td className="p-2 text-center">
                                     <button 
                                       onClick={() => removeStudent(student.id)}
-                                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                      className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
                                     >
                                       <Trash2 className="w-4 h-4" />
                                     </button>
@@ -1878,22 +1931,34 @@ export default function App() {
                               <input 
                                 type="number" 
                                 placeholder="คะแนน"
+                                min={0}
                                 max={assignment?.maxScore || 10}
-                                className="w-20 bg-white border border-slate-200 rounded-lg px-3 py-2 text-center outline-none focus:ring-2 focus:ring-indigo-500"
-                                onBlur={(e) => {
-                                  if (e.target.value) {
-                                    updateSubmissionScore(sub.id, Number(e.target.value));
+                                value={submissionScores[sub.id] || ''}
+                                onChange={(e) => {
+                                  setSubmissionScores(prev => ({
+                                    ...prev,
+                                    [sub.id]: e.target.value
+                                  }));
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && submissionScores[sub.id]) {
+                                    updateSubmissionScore(sub.id, Number(submissionScores[sub.id]));
                                   }
                                 }}
+                                className="w-20 bg-white border border-slate-250 focus:border-indigo-500 rounded-xl px-3 py-2 text-center outline-none focus:ring-4 focus:ring-indigo-100 font-mono font-bold transition-all"
                               />
                               <span className="text-sm font-bold text-slate-400">/ {assignment?.maxScore}</span>
                             </div>
                             <button 
                               onClick={() => {
-                                const score = prompt(`กรอกคะแนนสำหรับ ${student?.name} (เต็ม ${assignment?.maxScore})`);
-                                if (score !== null) updateSubmissionScore(sub.id, Number(score));
+                                const typedVal = submissionScores[sub.id];
+                                if (typedVal !== undefined && typedVal !== '') {
+                                  updateSubmissionScore(sub.id, Number(typedVal));
+                                } else {
+                                  showAlert('กรอกคะแนนก่อน', 'กรุณาระบุคะแนนในช่องป้อนคะแนนเพื่อบันทึก', 'warning');
+                                }
                               }}
-                              className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-emerald-700 transition-colors shadow-sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all active:scale-95 shadow-md shadow-emerald-100/50 cursor-pointer text-sm"
                             >
                               บันทึกคะแนน
                             </button>
@@ -2004,11 +2069,36 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-bold text-slate-600">ลิงก์ดาวน์โหลดหรือลิงก์เข้าชมสื่อการสอน</label>
+                    <div className="space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <label className="text-sm font-bold text-slate-600 block">ลิงก์ดาวน์โหลดหรือลิงก์เข้าชมสื่อการสอน</label>
+                        <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
+                          isUploadingMaterial 
+                            ? 'bg-slate-100 border-slate-200 text-slate-405' 
+                            : 'bg-indigo-50 border-indigo-100 text-indigo-700 hover:bg-indigo-100/70'
+                        }`}>
+                          {isUploadingMaterial ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                              กำลังอัปโหลด...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-3.5 h-3.5" />
+                              อัปโหลดไฟล์จากคอมพิวเตอร์
+                            </>
+                          )}
+                          <input 
+                            type="file" 
+                            className="hidden" 
+                            disabled={isUploadingMaterial}
+                            onChange={handleMaterialFileUpload} 
+                          />
+                        </label>
+                      </div>
                       <input 
                         type="text" 
-                        placeholder="เช่น https://drive.google.com/... หรือยูทูปลิงก์"
+                        placeholder="เช่น https://drive.google.com/... หรือคัดลอกลิงก์มาวางที่นี่"
                         value={newMaterialUrl}
                         onChange={(e) => setNewMaterialUrl(e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 text-base font-medium transition-all font-mono"
@@ -2307,6 +2397,34 @@ export default function App() {
                   <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>
               </form>
+
+              {/* Quick student selection badges for demo and testing convenience */}
+              {Object.keys(appData.courses || {}).some(key => (appData.courses || {})[key]?.length > 0) && (
+                <div className="text-left font-sans text-xs pt-2">
+                  <span className="text-slate-400 font-extrabold mr-2 uppercase tracking-wide">ค้นหาด่วนจากรายชื่อนักเรียน:</span>
+                  <div className="flex flex-wrap gap-2 mt-2 max-h-24 overflow-y-auto no-scrollbar pr-1">
+                    {Object.keys(appData.courses || {})
+                      .flatMap(key => (appData.courses || {})[key] || [])
+                      .filter((value, index, self) => self.findIndex(t => t.studentId === value.studentId) === index) // Unique by studentId
+                      .slice(0, 8)
+                      .map(st => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => {
+                            setSearchId(st.studentId);
+                            setFoundStudent(st);
+                            setHasSearched(true);
+                          }}
+                          className="bg-slate-50 hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-250 text-slate-600 hover:text-indigo-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1 shadow-2xs"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300 group-hover:bg-indigo-400" />
+                          {st.name} ({st.studentId})
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
             </motion.div>
 
             <AnimatePresence mode="wait">
@@ -2509,55 +2627,57 @@ export default function App() {
                       </h3>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {(appData.assignments || []).map(assignment => {
-                          const submission = appData.submissions.find(s => s.assignmentId === assignment.id && s.studentId === foundStudent.studentId);
-                          const isDone = !!submission;
-                          const uploading = isUploading[assignment.id];
+                        {(appData.assignments || [])
+                          .filter(assignment => assignment.courseKey === foundStudent.courseKey)
+                          .map(assignment => {
+                            const submission = appData.submissions.find(s => s.assignmentId === assignment.id && s.studentId === foundStudent.studentId);
+                            const isDone = !!submission;
+                            const uploading = isUploading[assignment.id];
 
-                          return (
-                            <div key={assignment.id} className={`p-6 rounded-[2.5rem] border transition-all ${
-                              isDone ? 'bg-emerald-50/50 border-emerald-100' : 'bg-slate-50 border-slate-100 hover:border-indigo-100'
-                            }`}>
-                              <div className="space-y-4">
-                                <div>
-                                  <h4 className="font-black text-slate-800 leading-tight mb-1">{assignment.title}</h4>
-                                  <p className="text-[10px] font-bold text-slate-400 line-clamp-2">{assignment.description}</p>
-                                </div>
-
-                                {isDone ? (
-                                  <div className="space-y-3">
-                                    <div className="flex items-center justify-between text-xs font-bold">
-                                      <span className="text-emerald-600 flex items-center gap-1.5">
-                                        <CheckCircle2 className="w-3.5 h-3.5" /> ส่งแล้ว
-                                      </span>
-                                      <span className="text-slate-400">{submission.status === 'graded' ? `${submission.score}/${assignment.maxScore}` : 'รอตรวจ'}</span>
-                                    </div>
-                                    <a 
-                                      href={submission.fileUrl} target="_blank" rel="noreferrer" 
-                                      className="block w-full text-center py-3 bg-white text-emerald-600 rounded-2xl border border-emerald-100 text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors"
-                                    >
-                                      View Submission
-                                    </a>
+                            return (
+                              <div key={assignment.id} className={`p-6 rounded-[2.5rem] border transition-all ${
+                                isDone ? 'bg-emerald-50/50 border-emerald-100' : 'bg-slate-50 border-slate-100 hover:border-indigo-100'
+                              }`}>
+                                <div className="space-y-4">
+                                  <div>
+                                    <h4 className="font-black text-slate-800 leading-tight mb-1">{assignment.title}</h4>
+                                    <p className="text-[10px] font-bold text-slate-400 line-clamp-2">{assignment.description}</p>
                                   </div>
-                                ) : (
-                                  <label className={`block w-full text-center py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer ${
-                                    uploading ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'
-                                  }`}>
-                                    {uploading ? 'Uploading...' : 'ส่งงานตอนนี้'}
-                                    <input 
-                                      type="file" 
-                                      className="hidden" 
-                                      disabled={uploading}
-                                      onChange={(e) => handleStudentFileUpload(e, assignment.id, foundStudent)} 
-                                    />
-                                  </label>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
 
-                        {(appData.assignments || []).length === 0 && (
+                                  {isDone ? (
+                                    <div className="space-y-3">
+                                      <div className="flex items-center justify-between text-xs font-bold">
+                                        <span className="text-emerald-600 flex items-center gap-1.5">
+                                          <CheckCircle2 className="w-3.5 h-3.5" /> ส่งแล้ว
+                                        </span>
+                                        <span className="text-slate-400">{submission.status === 'graded' ? `${submission.score}/${assignment.maxScore}` : 'รอตรวจ'}</span>
+                                      </div>
+                                      <a 
+                                        href={submission.fileUrl} target="_blank" rel="noreferrer" 
+                                        className="block w-full text-center py-3 bg-white text-emerald-600 rounded-2xl border border-emerald-100 text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors"
+                                      >
+                                        View Submission
+                                      </a>
+                                    </div>
+                                  ) : (
+                                    <label className={`block w-full text-center py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer ${
+                                      uploading ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'
+                                    }`}>
+                                      {uploading ? 'Uploading...' : 'ส่งงานตอนนี้'}
+                                      <input 
+                                        type="file" 
+                                        className="hidden" 
+                                        disabled={uploading}
+                                        onChange={(e) => handleStudentFileUpload(e, assignment.id, foundStudent)} 
+                                      />
+                                    </label>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                        {(appData.assignments || []).filter(assignment => assignment.courseKey === foundStudent.courseKey).length === 0 && (
                           <div className="md:col-span-3 text-center py-12">
                             <div className="w-16 h-16 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200 text-slate-300">
                               <Clock className="w-8 h-8" />
