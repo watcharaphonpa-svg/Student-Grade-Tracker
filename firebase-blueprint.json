@@ -106,6 +106,21 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "content", "userId", "updatedAt"]
+    },
+    "Material": {
+      "title": "Material",
+      "description": "Learning materials, media, and download links for students",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "url": { "type": "string" },
+        "type": { "type": "string", "enum": ["pdf", "doc", "link", "video", "image"] },
+        "courseKey": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "url", "type", "courseKey", "createdAt"]
     }
   },
   "firestore": {
@@ -136,6 +151,10 @@
     "/teacherNotes/{noteId}": {
       "schema": "TeacherNote",
       "description": "Collection of private teacher notes"
+    },
+    "/materials/{materialId}": {
+      "schema": "Material",
+      "description": "Collection of student learning materials and file links"
     }
   }
 }

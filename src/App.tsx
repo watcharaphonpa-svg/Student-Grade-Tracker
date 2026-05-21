@@ -44,6 +44,7 @@ interface Student {
 interface Subject {
   id: string;
   name: string;
+  classroomIds?: string[];
 }
 
 interface ClassRoom {
@@ -90,6 +91,16 @@ interface TeacherNote {
   updatedAt: string;
 }
 
+interface Material {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  type: 'pdf' | 'doc' | 'link' | 'video' | 'image';
+  courseKey: string;
+  createdAt: string;
+}
+
 interface AppData {
   subjects: Subject[];
   classRooms: ClassRoom[];
@@ -97,6 +108,7 @@ interface AppData {
   assignments: Assignment[];
   submissions: Submission[];
   attendance: Attendance[];
+  materials: Material[];
 }
 
 // --- Constants ---
@@ -148,7 +160,8 @@ export default function App() {
     courses: {},
     assignments: [],
     submissions: [],
-    attendance: []
+    attendance: [],
+    materials: []
   });
 
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
@@ -220,6 +233,13 @@ export default function App() {
       setAppData(prev => ({ ...prev, attendance: snap.docs.map(d => d.data() as Attendance) }));
     });
 
+    // Learning Materials
+    const unsubMaterials = onSnapshot(collection(db, 'materials'), (snap) => {
+      setAppData(prev => ({ ...prev, materials: snap.docs.map(d => d.data() as Material) }));
+    }, (error) => {
+      console.error("Error reading materials listener: ", error);
+    });
+
     // Teacher Notes
     let unsubNotes = () => {};
     if (user) {
@@ -238,6 +258,7 @@ export default function App() {
       unsubSubmissions();
       unsubStudents();
       unsubAttendance();
+      unsubMaterials();
       unsubNotes();
     };
   }, [user]); // Re-run when user changes to update submission listener
@@ -284,6 +305,10 @@ export default function App() {
     });
   };
   const [manageType, setManageType] = useState<'subject' | 'class' | 'assignment'>('subject');
+  const [newSubjectNameInput, setNewSubjectNameInput] = useState('');
+  const [newClassNameInput, setNewClassNameInput] = useState('');
+  const [selectedClassroomsForNewSubject, setSelectedClassroomsForNewSubject] = useState<string[]>([]);
+  const [manageCenterTab, setManageCenterTab] = useState<'subject' | 'class'>('subject');
   const [newItemName, setNewItemName] = useState('');
   const [newAssignmentDesc, setNewAssignmentDesc] = useState('');
   const [newAssignmentScore, setNewAssignmentScore] = useState(10);
@@ -315,6 +340,71 @@ export default function App() {
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  // Materials Form States
+  const [newMaterialTitle, setNewMaterialTitle] = useState('');
+  const [newMaterialDesc, setNewMaterialDesc] = useState('');
+  const [newMaterialUrl, setNewMaterialUrl] = useState('');
+  const [newMaterialType, setNewMaterialType] = useState<'pdf' | 'doc' | 'link' | 'video' | 'image'>('link');
+
+  const addMaterial = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSubjectId || !selectedClassId) {
+      showAlert('ข้อผิดพลาด', 'กรุณาเลือกวิชาและห้องเรียนก่อน', 'warning');
+      return;
+    }
+    if (!newMaterialTitle.trim() || !newMaterialUrl.trim()) {
+      showAlert('ข้อมูลไม่ครบถ้วน', 'กรุณากรอกหัวข้อสื่อและลิงก์ดาวน์โหลด/เข้าชม', 'warning');
+      return;
+    }
+
+    let formattedUrl = newMaterialUrl.trim();
+    if (!/^https?:\/\//i.test(formattedUrl)) {
+      formattedUrl = 'https://' + formattedUrl;
+    }
+
+    try {
+      const id = 'mat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      const newMat: Material = {
+        id,
+        title: newMaterialTitle.trim(),
+        description: newMaterialDesc.trim(),
+        url: formattedUrl,
+        type: newMaterialType,
+        courseKey: currentCourseKey,
+        createdAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, 'materials', id), newMat);
+      
+      // Clear form
+      setNewMaterialTitle('');
+      setNewMaterialDesc('');
+      setNewMaterialUrl('');
+      setNewMaterialType('link');
+      showAlert('สำเร็จ', 'เพิ่มสื่อการสอนเรียบร้อยแล้ว', 'success');
+    } catch (err) {
+      console.error(err);
+      showAlert('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลสื่อการสอนได้', 'error');
+    }
+  };
+
+  const deleteMaterial = async (materialId: string) => {
+    askConfirmation({
+      title: 'ลบสื่อการสอน',
+      message: 'คุณแน่ใจหรือไม่ว่าจะลบสื่อการสอนนี้? ข้อมูลนี้จะหายไปอย่างถาวร',
+      type: 'danger',
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'materials', materialId));
+          showAlert('สำเร็จ', 'ลบสื่อการสอนสำเร็จ', 'success');
+        } catch (err) {
+          console.error(err);
+          showAlert('เกิดข้อผิดพลาด', 'ไม่สามารถลบสื่อการสอนได้', 'error');
+        }
+      }
+    });
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('portal') === 'student') {
@@ -323,7 +413,7 @@ export default function App() {
     }
   }, []);
 
-  const [teacherTab, setTeacherTab] = useState<'dashboard' | 'grades' | 'assignments' | 'submissions' | 'attendance'>('dashboard');
+  const [teacherTab, setTeacherTab] = useState<'dashboard' | 'grades' | 'assignments' | 'submissions' | 'attendance' | 'materials'>('dashboard');
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [currentAttendance, setCurrentAttendance] = useState<Record<string, 'present' | 'late' | 'absent' | 'leave'>>({});
 
@@ -331,6 +421,8 @@ export default function App() {
   const [searchId, setSearchId] = useState('');
   const [foundStudent, setFoundStudent] = useState<Student | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [studentFilterSubjectId, setStudentFilterSubjectId] = useState('');
+  const [studentFilterClassId, setStudentFilterClassId] = useState('');
 
   // Student-specific submission listener when searching
   useEffect(() => {
@@ -647,18 +739,53 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const addSubject = async () => {
-    if (!newItemName.trim()) return;
+  const addSubject = async (customName?: string) => {
+    const targetName = (customName || newSubjectNameInput || newItemName).trim();
+    if (!targetName) return;
     const id = `s-${Date.now()}`;
-    await setDoc(doc(db, 'subjects', id), { id, name: newItemName.trim() });
+    const clIds = selectedClassroomsForNewSubject.length > 0 
+      ? selectedClassroomsForNewSubject 
+      : appData.classRooms.map(c => c.id);
+
+    await setDoc(doc(db, 'subjects', id), { 
+      id, 
+      name: targetName,
+      classroomIds: clIds
+    });
+    setNewSubjectNameInput('');
+    setNewItemName('');
+    setSelectedClassroomsForNewSubject([]);
+  };
+
+  const addClass = async (customName?: string) => {
+    const targetName = (customName || newClassNameInput || newItemName).trim();
+    if (!targetName) return;
+    const id = `c-${Date.now()}`;
+    await setDoc(doc(db, 'classRooms', id), { id, name: targetName });
+    setNewClassNameInput('');
     setNewItemName('');
   };
 
-  const addClass = async () => {
-    if (!newItemName.trim()) return;
-    const id = `c-${Date.now()}`;
-    await setDoc(doc(db, 'classRooms', id), { id, name: newItemName.trim() });
-    setNewItemName('');
+  const toggleSubjectClassroom = async (subjectId: string, classroomId: string) => {
+    const subject = appData.subjects.find(s => s.id === subjectId);
+    if (!subject) return;
+
+    let currentIds = subject.classroomIds;
+    if (!currentIds || !Array.isArray(currentIds)) {
+      currentIds = appData.classRooms.map(c => c.id);
+    }
+
+    let nextIds: string[];
+    if (currentIds.includes(classroomId)) {
+      nextIds = currentIds.filter(id => id !== classroomId);
+    } else {
+      nextIds = [...currentIds, classroomId];
+    }
+
+    await setDoc(doc(db, 'subjects', subjectId), {
+      ...subject,
+      classroomIds: nextIds
+    }, { merge: true });
   };
 
   const addAssignment = async () => {
@@ -1042,6 +1169,7 @@ export default function App() {
                   { id: 'grades', label: 'ตารางคะแนน', icon: Calculator },
                   { id: 'assignments', label: 'จัดการงาน', icon: FileText },
                   { id: 'submissions', label: 'ตรวจงาน', icon: Monitor },
+                  { id: 'materials', label: 'สื่อการสอน', icon: Link },
                   { id: 'attendance', label: 'เช็คชื่อ', icon: CheckCircle2 },
                 ].map((tab) => {
                   const Icon = tab.icon;
@@ -1090,37 +1218,38 @@ export default function App() {
                 })}
               </div>
 
-              {/* Context Selectors */}
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all group">
-                  <BookOpen className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600" />
-                  <select 
-                    value={selectedSubjectId}
-                    onChange={(e) => setSelectedSubjectId(e.target.value)}
-                    className="bg-transparent border-none outline-none text-sm font-semibold text-slate-700 pr-2 min-w-[120px] cursor-pointer"
-                  >
-                    {appData.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                  <button onClick={() => { setManageType('subject'); setIsManageModalOpen(true); }} className="hover:bg-slate-100 p-1.5 rounded-lg transition-colors">
-                    <Settings className="w-3.5 h-3.5 text-slate-400" />
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all group">
-                  <Users className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600" />
-                  <select 
-                    value={selectedClassId}
-                    onChange={(e) => setSelectedClassId(e.target.value)}
-                    className="bg-transparent border-none outline-none text-sm font-semibold text-slate-700 pr-2 min-w-[80px] cursor-pointer"
-                  >
-                    {appData.classRooms.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  <button onClick={() => { setManageType('class'); setIsManageModalOpen(true); }} className="hover:bg-slate-100 p-1.5 rounded-lg transition-colors">
-                    <Settings className="w-3.5 h-3.5 text-slate-400" />
-                  </button>
-                </div>
-              </div>
             </motion.div>
+
+            {teacherTab !== 'dashboard' && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-slate-100 border border-slate-200/60 rounded-2xl px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-slate-700 shadow-sm"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-white rounded-xl border border-slate-200/50 shadow-sm text-indigo-600">
+                    <GraduationCap className="w-4 h-4" />
+                  </div>
+                  <div className="text-left">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block leading-none mb-0.5">กำลังจัดการรายวิชา</span>
+                    <span className="font-bold text-slate-800 text-sm">
+                      {appData.subjects.find(s => s.id === selectedSubjectId)?.name || 'ยังเลือกวิชาไม่ได้'}
+                    </span>
+                    <span className="mx-2 text-slate-350">|</span>
+                    <span className="text-slate-500 text-sm font-semibold">
+                      ห้อง {appData.classRooms.find(c => c.id === selectedClassId)?.name || 'ยังเลือกห้องไม่ได้'}
+                    </span>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setTeacherTab('dashboard')}
+                  className="flex items-center gap-1.5 text-xs font-bold text-indigo-605 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer self-start sm:self-auto"
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  เปลี่ยนรายวิชา / ห้องเรียน
+                </button>
+              </motion.div>
+            )}
 
             {teacherTab === 'dashboard' && (
               <motion.div 
@@ -1128,21 +1257,61 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-12"
               >
-                <div className="flex items-center justify-between">
-                   <h2 className="text-3xl font-black text-slate-800">รายวิชาทั้งหมด</h2>
-                   <button 
-                     onClick={() => { setManageType('subject'); setIsManageModalOpen(true); }}
-                     className="flex items-center gap-2 bg-white text-slate-700 px-6 py-3 rounded-2xl font-bold border border-slate-200 shadow-sm hover:bg-slate-50 transition-all active:scale-95"
-                   >
-                     <Plus className="w-5 h-5 text-indigo-500" />
-                     เพิ่มรายวิชาใหม่
-                   </button>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                  <div className="space-y-1 text-left">
+                    <h2 className="text-3xl font-black text-slate-800">รายวิชาทั้งหมด</h2>
+                    <p className="text-slate-400 text-sm font-medium">เลือกวิชาและชั้นเรียนด้านล่าง เพื่อเข้าจัดการบันทึกคะแนน สื่อการสอน เช็คชื่อ หรือการบ้าน</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button 
+                      onClick={() => { 
+                        setManageType('subject'); 
+                        setManageCenterTab('subject');
+                        setIsManageModalOpen(true); 
+                      }}
+                      className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-3 rounded-2xl font-bold hover:bg-indigo-700 shadow-md shadow-indigo-100 transition-all active:scale-95 text-sm cursor-pointer"
+                    >
+                      <Settings className="w-4 h-4 text-white animate-spin-hover" />
+                      ศูนย์ตั้งค่าวิชา & ห้องเรียนทั้งหมด
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {appData.subjects.map(subject => {
-                    const subjectClassrooms = appData.classRooms; 
-                    return subjectClassrooms.map(classroom => {
+                  {(() => {
+                    const activeCourses = appData.subjects.flatMap(subject => {
+                      const hasIdsField = Array.isArray(subject.classroomIds);
+                      const subjectClassrooms = hasIdsField
+                        ? appData.classRooms.filter(c => subject.classroomIds!.includes(c.id))
+                        : appData.classRooms;
+                      return subjectClassrooms.map(classroom => ({ subject, classroom }));
+                    });
+
+                    if (activeCourses.length === 0) {
+                      return (
+                        <div className="col-span-full py-20 text-center space-y-6">
+                           <div className="w-24 h-24 bg-slate-100 rounded-[2.5rem] flex items-center justify-center mx-auto text-slate-300">
+                             <LayoutDashboard className="w-12 h-12" />
+                           </div>
+                           <div className="space-y-2">
+                             <h3 className="text-2xl font-black text-slate-800">ยังไม่มีวิชาเรียนที่ผูกกับห้องทำงาน</h3>
+                             <p className="text-slate-400 font-medium">กรุณาตั้งค่าเพื่อผูกวิชาเรียนของคุณเข้ากับห้องเรียน / แผนกที่เปิดสอน</p>
+                           </div>
+                           <button 
+                             onClick={() => { 
+                               setManageType('subject'); 
+                               setManageCenterTab('subject');
+                               setIsManageModalOpen(true); 
+                             }}
+                             className="bg-indigo-600 text-white px-8 py-4 rounded-[2rem] font-black shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95 cursor-pointer text-sm"
+                           >
+                             ตั้งค่าการผูกวิชาและห้องเรียนตอนนี้
+                           </button>
+                        </div>
+                      );
+                    }
+
+                    return activeCourses.map(({ subject, classroom }) => {
                       const courseKey = `${subject.id}-${classroom.id}`;
                       const studentCount = appData.courses[courseKey]?.length || 0;
                       
@@ -1168,6 +1337,7 @@ export default function App() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setManageType('subject');
+                                  setManageCenterTab('subject');
                                   setIsManageModalOpen(true);
                                 }}
                                 className="p-3 hover:bg-slate-100 rounded-2xl transition-colors text-slate-300"
@@ -1178,7 +1348,7 @@ export default function App() {
 
                             <div className="space-y-2">
                               <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em]">Course Code: {subject.id}</p>
-                              <h3 className="text-2xl font-black text-slate-800 leading-tight">
+                              <h3 className="text-2xl font-black text-slate-800 leading-tight text-left">
                                 {subject.name}
                               </h3>
                               <p className="text-slate-400 font-bold flex items-center gap-2">
@@ -1187,12 +1357,12 @@ export default function App() {
                               </p>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
-                              <div className="space-y-1">
+                            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-55 flex-row">
+                              <div className="space-y-1 text-left">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">นักเรียน</p>
                                 <p className="text-xl font-black text-slate-800">{studentCount} คน</p>
                               </div>
-                              <div className="space-y-1">
+                              <div className="space-y-1 text-left">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">สรุปผล</p>
                                 <p className="text-xl font-black text-slate-800">คลิกดู</p>
                               </div>
@@ -1201,32 +1371,14 @@ export default function App() {
                           
                           <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between group-hover:bg-indigo-50 transition-colors">
                             <span className="text-sm font-bold text-slate-500 group-hover:text-indigo-600">เข้าสู่ระบบจัดการคะแนน</span>
-                            <div className="p-2 bg-white rounded-xl shadow-sm text-slate-300 group-hover:text-indigo-600 transition-colors">
-                              <ChevronRight className="w-4 h-4" />
+                            <div className="p-2 bg-white rounded-xl shadow-sm text-slate-300 group-hover:text-indigo-600 transition-all duration-300">
+                              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
                             </div>
                           </div>
                         </motion.div>
                       );
                     });
-                  })}
-
-                  {appData.subjects.length === 0 && (
-                     <div className="col-span-full py-20 text-center space-y-6">
-                        <div className="w-24 h-24 bg-slate-100 rounded-[2.5rem] flex items-center justify-center mx-auto text-slate-300">
-                          <LayoutDashboard className="w-12 h-12" />
-                        </div>
-                        <div className="space-y-2">
-                          <h3 className="text-2xl font-black text-slate-800">ยังไม่มีรายวิชาในระบบ</h3>
-                          <p className="text-slate-400 font-medium">เริ่มต้นด้วยการเพิ่มรายวิชาและห้องเรียนที่คุณสอน</p>
-                        </div>
-                        <button 
-                          onClick={() => { setManageType('subject'); setIsManageModalOpen(true); }}
-                          className="bg-indigo-600 text-white px-8 py-4 rounded-[2rem] font-black shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95"
-                        >
-                          สร้างวิชาแรกของคุณ
-                        </button>
-                     </div>
-                  )}
+                  })()}
                 </div>
               </motion.div>
             )}
@@ -1794,6 +1946,185 @@ export default function App() {
                 </div>
               </div>
             )}
+            {teacherTab === 'materials' && (
+              <div className="max-w-4xl mx-auto space-y-8">
+                {/* Add Material card */}
+                <motion.div 
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6"
+                >
+                  <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+                      <Link className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-800">เพิ่มคลังสื่อการสอน</h2>
+                      <p className="text-slate-500 text-sm">อัปโหลดหรือเพิ่มลิงก์เอกสารประกอบการเรียน หนังสือเรียน หรือวิดีโอประกอบการสอนสำหรับนักเรียน</p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={addMaterial} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-slate-600">หัวข้อสื่อการสอน</label>
+                        <input 
+                          type="text" 
+                          placeholder="เช่น หนังสือเรียน รายวิชาภาษาไทย บทที่ 1"
+                          value={newMaterialTitle}
+                          onChange={(e) => setNewMaterialTitle(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 text-base font-medium transition-all"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-slate-600">ประเภทของสื่อการเรียนรู้</label>
+                        <div className="grid grid-cols-5 gap-2">
+                          {[
+                            { type: 'pdf', label: 'PDF' },
+                            { type: 'doc', label: 'Doc/Word' },
+                            { type: 'link', label: 'ลิงก์เว็บ' },
+                            { type: 'video', label: 'วิดีโอ' },
+                            { type: 'image', label: 'รูปภาพ' },
+                          ].map(item => (
+                            <button
+                              key={item.type}
+                              type="button"
+                              onClick={() => setNewMaterialType(item.type as any)}
+                              className={`py-2.5 rounded-lg border text-xs font-bold transition-all text-center flex flex-col items-center justify-center gap-1 ${
+                                newMaterialType === item.type 
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md scale-105' 
+                                  : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200/80'
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-600">ลิงก์ดาวน์โหลดหรือลิงก์เข้าชมสื่อการสอน</label>
+                      <input 
+                        type="text" 
+                        placeholder="เช่น https://drive.google.com/... หรือยูทูปลิงก์"
+                        value={newMaterialUrl}
+                        onChange={(e) => setNewMaterialUrl(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 text-base font-medium transition-all font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-600">คำอธิบาย/รายละเอียดเพิ่มเติม (ถ้ามี)</label>
+                      <textarea 
+                        rows={3}
+                        placeholder="เช่น ให้เด็กๆ อ่านหน้าที่ 10-15 หรือคำชี้แจงในการทำความเข้าใจสื่อชิ้นนี้..."
+                        value={newMaterialDesc}
+                        onChange={(e) => setNewMaterialDesc(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium transition-all resize-none"
+                      />
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button 
+                        type="submit"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-xl font-bold transition-all active:scale-95 shadow-lg shadow-indigo-150 inline-flex items-center gap-2"
+                      >
+                        <Plus className="w-5 h-5" />
+                        บันทึกสื่อการสอนใหม่
+                      </button>
+                    </div>
+                  </form>
+                </motion.div>
+
+                {/* List of current Course Materials */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-slate-800">คลังสื่อการสอนที่อัปโหลดไว้</h3>
+                    <span className="text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+                      ทั้งหมด {(appData.materials || []).filter(m => m.courseKey === currentCourseKey).length} ชิ้น
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(appData.materials || [])
+                      .filter(m => m.courseKey === currentCourseKey)
+                      .map(material => {
+                        let iconColor = 'bg-slate-50 text-slate-500 border border-slate-100';
+                        let label = 'ลิงก์ทั่วไป';
+                        if (material.type === 'pdf') { iconColor = 'bg-rose-50 text-rose-600 border border-rose-100'; label = 'เอกสาร PDF'; }
+                        else if (material.type === 'doc') { iconColor = 'bg-blue-50 text-blue-600 border border-blue-100'; label = 'Word/PowerPoint'; }
+                        else if (material.type === 'video') { iconColor = 'bg-amber-50 text-amber-600 border border-amber-100'; label = 'วิดีโอการสอน'; }
+                        else if (material.type === 'image') { iconColor = 'bg-purple-50 text-purple-600 border border-purple-100'; label = 'สื่อรูปภาพ'; }
+
+                        return (
+                          <motion.div 
+                            initial={{ opacity: 0, scale: 0.98 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            key={material.id} 
+                            className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between gap-4 group relative overflow-hidden"
+                          >
+                            <div className="space-y-3">
+                              <div className="flex items-start justify-between">
+                                <div className="flex gap-3">
+                                  <div className={`p-3 rounded-xl flex items-center justify-center ${iconColor}`}>
+                                    <Link className="w-5 h-5" />
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</span>
+                                    <h4 className="font-bold text-slate-800 line-clamp-1 group-hover:text-indigo-600 transition-colors">{material.title}</h4>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {material.description && (
+                                <p className="text-slate-500 text-xs leading-relaxed line-clamp-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">{material.description}</p>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between border-t border-slate-50 pt-3">
+                              <span className="text-[10px] font-bold text-slate-400">
+                                เพิ่มเมื่อ {new Date(material.createdAt).toLocaleDateString('th-TH')}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <a 
+                                  href={material.url} 
+                                  target="_blank" 
+                                  rel="noreferrer" 
+                                  className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50/50 hover:bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 transition-all cursor-pointer"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  เปิดดู/ดาวน์โหลด
+                                </a>
+                                <button 
+                                  onClick={() => deleteMaterial(material.id)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                  title="ลบสื่อการสอน"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+
+                    {(appData.materials || []).filter(m => m.courseKey === currentCourseKey).length === 0 && (
+                      <div className="md:col-span-2 bg-white border border-slate-200/60 p-12 rounded-3xl text-center shadow-sm space-y-4">
+                        <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 mx-auto">
+                          <Link className="w-8 h-8" />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="font-bold text-slate-800">ยังไม่มีสื่อการสอนในวิชานี้</p>
+                          <p className="text-slate-500 text-xs">คุณยังไม่ได้อัปโหลดหรือระบุลิงก์สื่อเรียนรู้ใดๆ กรอกข้อมูลฟอร์มด้านบนเพื่อเริ่มบันทึก</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             {teacherTab === 'attendance' && (
               /* Attendance View */
               <div className="space-y-6">
@@ -2236,6 +2567,73 @@ export default function App() {
                         )}
                       </div>
                     </div>
+
+                    {/* Learning Materials Card */}
+                    <div className="md:col-span-12 bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl flex flex-col">
+                      <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8">
+                        <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                          <BookOpen className="w-6 h-6" />
+                        </div>
+                        สื่อการเรียนการสอนสำหรับน้องๆ
+                      </h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {(appData.materials || [])
+                          .filter(m => m.courseKey === foundStudent.courseKey)
+                          .map(material => {
+                            let iconColor = 'bg-slate-50 text-slate-500 border border-slate-100';
+                            let label = 'ลิงก์ประกอบการเรียน';
+                            if (material.type === 'pdf') { iconColor = 'bg-rose-50 text-rose-600 border border-rose-100'; label = 'เอกสาร PDF'; }
+                            else if (material.type === 'doc') { iconColor = 'bg-blue-50 text-blue-600 border border-blue-100'; label = 'Word / PowerPoint'; }
+                            else if (material.type === 'video') { iconColor = 'bg-amber-50 text-amber-600 border border-amber-100'; label = 'วิดีโอประกอบการเรียน'; }
+                            else if (material.type === 'image') { iconColor = 'bg-purple-50 text-purple-600 border border-purple-100'; label = 'สื่อรูปภาพ'; }
+
+                            return (
+                              <div key={material.id} className="p-6 rounded-[2.5rem] border border-slate-150 bg-slate-50/50 flex flex-col justify-between hover:border-indigo-200 hover:bg-white transition-all group">
+                                <div className="space-y-4">
+                                  <div className="flex gap-3">
+                                    <div className={`p-3 rounded-xl flex items-center justify-center h-fit ${iconColor}`}>
+                                      <Link className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</span>
+                                      <h4 className="font-extrabold text-slate-800 line-clamp-1 group-hover:text-indigo-600 transition-colors">{material.title}</h4>
+                                    </div>
+                                  </div>
+
+                                  {material.description && (
+                                    <p className="text-slate-500 text-xs leading-relaxed line-clamp-3 bg-white p-3 rounded-2xl border border-slate-100">{material.description}</p>
+                                  )}
+                                </div>
+
+                                <div className="mt-4 pt-3 border-t border-slate-100/60 flex items-center justify-between">
+                                  <span className="text-[9px] font-bold text-slate-400">
+                                    {new Date(material.createdAt).toLocaleDateString('th-TH')}
+                                  </span>
+                                  <a 
+                                    href={material.url} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="flex items-center gap-1.5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-100 cursor-pointer transition-all active:scale-95"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                    อ่าน/ดาวน์โหลด
+                                  </a>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                        {(appData.materials || []).filter(m => m.courseKey === foundStudent.courseKey).length === 0 && (
+                          <div className="md:col-span-3 text-center py-12">
+                            <div className="w-16 h-16 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200 text-slate-300">
+                              <BookOpen className="w-8 h-8" />
+                            </div>
+                            <p className="text-sm font-bold text-slate-400">ยังไม่มีเอกสารหรือสื่อการเรียนในวิชานี้</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </motion.div>
               ) : hasSearched && !foundStudent && (
@@ -2254,6 +2652,127 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {!foundStudent && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-10 rounded-[3rem] border border-slate-200/90 shadow-xl space-y-6"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="text-xl font-bold text-slate-800">เอกสารการสอน & สื่อสำหรับนักเรียน</h3>
+                    <p className="text-slate-500 text-xs">คุณสามารถเลือกดู ค้นหา หรือดาวน์โหลดสื่อการเรียนรู้สาธารณะได้ที่นี่</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 group">
+                  <BookOpen className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600" />
+                  <select 
+                    value={studentFilterSubjectId}
+                    onChange={(e) => setStudentFilterSubjectId(e.target.value)}
+                    className="bg-transparent border-none outline-none text-sm font-semibold text-slate-700 w-full cursor-pointer"
+                  >
+                    <option value="">-- รายวิชาทั้งหมด --</option>
+                    {appData.subjects.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 group">
+                  <Users className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600" />
+                  <select 
+                    value={studentFilterClassId}
+                    onChange={(e) => setStudentFilterClassId(e.target.value)}
+                    className="bg-transparent border-none outline-none text-sm font-semibold text-slate-700 w-full cursor-pointer"
+                  >
+                    <option value="">-- ชั้นเรียนทั้งหมด --</option>
+                    {appData.classRooms.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Media Elements */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {(appData.materials || [])
+                  .filter(m => {
+                    const [subId, classId] = m.courseKey.split('-');
+                    if (studentFilterSubjectId && subId !== studentFilterSubjectId) return false;
+                    if (studentFilterClassId && classId !== studentFilterClassId) return false;
+                    return true;
+                  })
+                  .map(material => {
+                    const associatedSubject = appData.subjects.find(s => s.id === material.courseKey.split('-')[0])?.name || '';
+                    const associatedClass = appData.classRooms.find(c => c.id === material.courseKey.split('-')[1])?.name || '';
+                    
+                    let iconColor = 'bg-slate-50 text-slate-500 border border-slate-100';
+                    let label = 'ลิงก์ประกอบการเรียน';
+                    if (material.type === 'pdf') { iconColor = 'bg-rose-50 text-rose-600 border border-rose-100'; label = 'เอกสาร PDF'; }
+                    else if (material.type === 'doc') { iconColor = 'bg-blue-50 text-blue-600 border border-blue-100'; label = 'Word / PowerPoint'; }
+                    else if (material.type === 'video') { iconColor = 'bg-amber-50 text-amber-600 border border-amber-100'; label = 'วิดีโอประกอบการเรียน'; }
+                    else if (material.type === 'image') { iconColor = 'bg-purple-50 text-purple-600 border border-purple-100'; label = 'รูปภาพ/สไลด์'; }
+
+                    return (
+                      <div key={material.id} className="p-5 rounded-3xl border border-slate-150 bg-slate-50/50 flex flex-col justify-between hover:border-indigo-200 hover:bg-white transition-all group">
+                        <div className="space-y-3 mb-4">
+                          <div className="flex gap-3">
+                            <div className={`p-2.5 rounded-xl flex items-center justify-center h-fit ${iconColor}`}>
+                              <Link className="w-4 h-4" />
+                            </div>
+                            <div className="text-left">
+                              <span className="text-[10px] font-bold text-slate-400 block leading-none mb-1">
+                                {associatedSubject} {associatedClass ? `(${associatedClass})` : ''}
+                              </span>
+                              <h4 className="font-extrabold text-slate-800 text-sm line-clamp-1 group-hover:text-indigo-600 transition-colors">{material.title}</h4>
+                            </div>
+                          </div>
+
+                          {material.description && (
+                            <p className="text-slate-500 text-xs text-left leading-relaxed line-clamp-2 bg-white p-3 border border-slate-100/60 rounded-2xl">{material.description}</p>
+                          )}
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-100/60 flex items-center justify-between">
+                          <span className="text-[9px] font-bold text-indigo-400 bg-indigo-50/70 px-2.5 py-1 rounded-md">
+                            {label}
+                          </span>
+                          <a 
+                            href={material.url} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="flex items-center gap-1.5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2.5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            เข้าชมสื่อ
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                {(appData.materials || []).filter(m => {
+                  const [subId, classId] = m.courseKey.split('-');
+                  if (studentFilterSubjectId && subId !== studentFilterSubjectId) return false;
+                  if (studentFilterClassId && classId !== studentFilterClassId) return false;
+                  return true;
+                }).length === 0 && (
+                  <div className="sm:col-span-2 text-center py-10 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                    <p className="text-slate-400 font-bold text-sm">ยังไม่มีสื่อการสอนในประเภทจัดกรอง</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
           </div>
         )}
 
@@ -2263,7 +2782,7 @@ export default function App() {
             <div className="space-y-3">
               <button 
                 onClick={() => setIsGradingCriteriaModalOpen(true)}
-                className="font-bold text-slate-800 flex items-center gap-2 hover:text-indigo-600 transition-colors group"
+                className="font-bold text-slate-800 flex items-center gap-2 hover:text-indigo-600 transition-colors group cursor-pointer"
               >
                 <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-100 transition-colors">
                   <Info className="w-5 h-5" />
@@ -2300,51 +2819,226 @@ export default function App() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden"
+              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden z-10"
             >
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                <h3 className="text-xl font-bold text-slate-800">
-                  {manageType === 'subject' ? 'จัดการวิชา' : manageType === 'class' ? 'จัดการห้องเรียน' : 'สั่งงานใหม่'}
-                </h3>
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div className="text-left">
+                  <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-indigo-600 animate-spin-hover" />
+                    ศูนย์ตั้งค่าวิชา & ห้องเรียนทั้งหมด
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">จัดการทุกรายวิชา ห้องเรียน แผนก และระดับชั้นในหน้าต่างเดียว</p>
+                </div>
                 <button onClick={() => setIsManageModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
                   <X className="w-5 h-5 text-slate-400" />
                 </button>
               </div>
-              
-              <div className="p-6 space-y-6">
-                {manageType === 'subject' || manageType === 'class' ? (
-                  <>
-                    <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        placeholder={`ชื่อ${manageType === 'subject' ? 'วิชา' : 'ห้อง'}ใหม่...`}
-                        value={newItemName}
-                        onChange={(e) => setNewItemName(e.target.value)}
-                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                      <button 
-                        onClick={manageType === 'subject' ? addSubject : addClass}
-                        className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-700 transition-colors"
-                      >
-                        เพิ่ม
-                      </button>
-                    </div>
 
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                       {(manageType === 'subject' ? appData.subjects : appData.classRooms).map(item => (
-                        <div key={item.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                          <span className="font-medium text-slate-700">{item.name}</span>
+              {/* Tab Switcher */}
+              <div className="flex border-b border-slate-100 bg-slate-50/30 p-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setManageCenterTab('subject')}
+                  className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer ${
+                    manageCenterTab === 'subject'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4" />
+                  รายวิชาเรียน ({appData.subjects.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManageCenterTab('class')}
+                  className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer ${
+                    manageCenterTab === 'class'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  ห้องเรียน / แผนก ({appData.classRooms.length})
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-5 text-left">
+                {manageCenterTab === 'subject' ? (
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block font-sans">เพิ่มรายวิชาที่สอน</label>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            placeholder="เช่น วิชาการเขียนโปรแกรมเชิงวัตถุ B..."
+                            value={newSubjectNameInput}
+                            onChange={(e) => setNewSubjectNameInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { addSubject(); } }}
+                            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-700 placeholder-slate-400 text-sm"
+                          />
                           <button 
-                            onClick={() => manageType === 'subject' ? removeSubject(item.id) : removeClass(item.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                            type="button"
+                            onClick={() => addSubject()}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all active:scale-95 text-sm cursor-pointer"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            เพิ่มวิชา
                           </button>
                         </div>
-                      ))}
+                      </div>
+
+                      {/* Classroom selection for new subject */}
+                      <div className="bg-indigo-50/40 p-3 rounded-2xl border border-indigo-100/50 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-extrabold text-indigo-700 block">เปิดสอนในห้องเรียนใดบ้าง?:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allRoomIds = appData.classRooms.map(r => r.id);
+                              if (selectedClassroomsForNewSubject.length === allRoomIds.length) {
+                                setSelectedClassroomsForNewSubject([]);
+                              } else {
+                                setSelectedClassroomsForNewSubject(allRoomIds);
+                              }
+                            }}
+                            className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                          >
+                            {selectedClassroomsForNewSubject.length === appData.classRooms.length ? 'ยกเลิกทั้งหมด' : 'เลือกทุกห้อง'}
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {appData.classRooms.map(room => {
+                            const isSelected = selectedClassroomsForNewSubject.includes(room.id);
+                            return (
+                              <button
+                                key={room.id}
+                                type="button"
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedClassroomsForNewSubject(prev => prev.filter(id => id !== room.id));
+                                  } else {
+                                    setSelectedClassroomsForNewSubject(prev => [...prev, room.id]);
+                                  }
+                                }}
+                                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                                }`}
+                              >
+                                {room.name}
+                              </button>
+                            );
+                          })}
+                          {appData.classRooms.length === 0 && (
+                            <span className="text-xs text-slate-400 font-medium italic">กรุณาเพิ่มห้องเรียนในแท็บ 'ห้องเรียน/แผนก' ก่อน</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </>
-                ) : null}
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">รายวิชาเรียนทั้งหมด ({appData.subjects.length} วิชา)</label>
+                      <div className="space-y-3 max-h-64 overflow-y-auto pr-2 divide-y divide-slate-100 bg-slate-50/50 p-3.5 rounded-2xl border border-slate-150">
+                        {appData.subjects.map(item => (
+                          <div key={item.id} className="pt-3 first:pt-0 flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-800 text-sm block">{item.name}</span>
+                              <button 
+                                type="button"
+                                onClick={() => removeSubject(item.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            {/* Class selection box */}
+                            <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 space-y-1.5 text-left">
+                              <span className="text-[10px] font-black text-slate-400 block uppercase tracking-widest">ห้องเรียนที่สอนวิชานี้ (คลิกเปิด/ปิด เพื่อกำหนดแยกกัน):</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {appData.classRooms.map(room => {
+                                  // Default to true (or includes) depending on if classroomIds is initialized
+                                  const hasIdsField = Array.isArray(item.classroomIds);
+                                  const isSelected = hasIdsField ? item.classroomIds!.includes(room.id) : true;
+                                  return (
+                                    <button
+                                      key={room.id}
+                                      type="button"
+                                      onClick={() => toggleSubjectClassroom(item.id, room.id)}
+                                      className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-emerald-50 border-emerald-250 text-emerald-700 font-extrabold'
+                                          : 'bg-slate-50/50 border-slate-150 text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                                      }`}
+                                    >
+                                      {room.name}
+                                    </button>
+                                  );
+                                })}
+                                {appData.classRooms.length === 0 && (
+                                  <span className="text-[11px] text-slate-400 font-semibold italic">ไม่มีห้องเรียนในระบบ</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {appData.subjects.length === 0 && (
+                          <p className="text-center text-slate-400 py-6 text-xs font-medium">ยังไม่มีรายวิชาในระบบ</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">เพิ่มห้องเรียน / แผนก / ระดับชั้น</label>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          placeholder="เช่น DB-PM5/1, ปวส.2 คอมพิวเตอร์..."
+                          value={newClassNameInput}
+                          onChange={(e) => setNewClassNameInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { addClass(); } }}
+                          className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-700 placeholder-slate-400 text-sm"
+                        />
+                        <button 
+                          onClick={() => addClass()}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all active:scale-95 text-sm cursor-pointer"
+                        >
+                          เพิ่มห้อง
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">ห้องเรียน / แผนกทั้งหมด ({appData.classRooms.length} ห้อง)</label>
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-2 divide-y divide-slate-100 bg-slate-50/50 p-3 rounded-2xl border border-slate-150">
+                        {appData.classRooms.map(item => (
+                          <div key={item.id} className="flex items-center justify-between py-2 first:pt-0 last:pb-0">
+                            <span className="font-semibold text-slate-705 text-sm">{item.name}</span>
+                            <button 
+                              onClick={() => removeClass(item.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                        {appData.classRooms.length === 0 && (
+                          <p className="text-center text-slate-400 py-6 text-xs font-medium">ยังไม่มีห้องเรียนในระบบ</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex gap-2.5 text-amber-800 text-xs font-medium leading-relaxed">
+                  <span className="text-sm">💡</span>
+                  <p>
+                    ระบบจะนำรายวิชาที่คุณป้อนทุกวิชา มาจับคู่กับห้องเรียนทุกห้องโดยอัตโนมัติ เพื่อสร้างห้องย่อยให้คุณเข้าเลือกทำงาน จัดการคะแนน หรือประเมินผลได้สะดวกทันที
+                  </p>
+                </div>
               </div>
             </motion.div>
           </div>

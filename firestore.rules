@@ -78,6 +78,13 @@ service cloud.firestore {
              data.updatedAt is string;
     }
 
+    function isValidMaterial(data) {
+      return data.keys().hasAll(['id', 'title', 'description', 'url', 'type', 'courseKey', 'createdAt']) &&
+             data.id is string && data.title is string && data.description is string &&
+             data.url is string && data.type in ['pdf', 'doc', 'link', 'video', 'image'] &&
+             data.courseKey is string && data.createdAt is string;
+    }
+
     // --- Collection Rules ---
 
     match /subjects/{subjectId} {
@@ -127,6 +134,12 @@ service cloud.firestore {
       allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidTeacherNote(incoming());
       allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidTeacherNote(incoming());
       allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /materials/{materialId} {
+      allow read: if true;
+      allow create, update: if isTeacher() && isValidMaterial(incoming());
+      allow delete: if isTeacher();
     }
   }
 }
