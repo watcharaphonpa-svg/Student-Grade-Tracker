@@ -169,6 +169,19 @@ const parseCourseKey = (key: string) => {
   };
 };
 
+const matchCourseKey = (key: string, subjects: Subject[], classRooms: ClassRoom[]) => {
+  if (!key) return null;
+  const cleanKey = key.trim().toLowerCase();
+  for (const subject of subjects) {
+    for (const classroom of classRooms) {
+      if (cleanKey === `${subject.id}-${classroom.id}`.toLowerCase()) {
+        return { subject, classroom };
+      }
+    }
+  }
+  return null;
+};
+
 export default function App() {
   const [appData, setAppData] = useState<AppData>({
     subjects: [],
@@ -498,10 +511,8 @@ export default function App() {
       const s = records.find(item => item.studentId.trim().toLowerCase() === foundStudent.studentId.trim().toLowerCase());
       if (s && !seenCourseKeys.has(s.courseKey)) {
         // Only show if the subject and classroom actually exist in database
-        const { subjectId, classroomId } = parseCourseKey(s.courseKey);
-        const subjectExists = appData.subjects.some(sub => sub.id === subjectId);
-        const classExists = appData.classRooms.some(cls => cls.id === classroomId);
-        if (subjectExists && classExists) {
+        const match = matchCourseKey(s.courseKey, appData.subjects, appData.classRooms);
+        if (match) {
           seenCourseKeys.add(s.courseKey);
           matched.push(s);
         }
@@ -1078,6 +1089,10 @@ export default function App() {
     // Search across all courses
     let found: Student | null = null;
     for (const key in (appData.courses || {})) {
+      // Validate that course is active in subjects & classrooms database
+      const match = matchCourseKey(key, appData.subjects, appData.classRooms);
+      if (!match) continue; // Skip deleted/inactive courses
+
       const student = (appData.courses || {})[key].find(
         s => s.studentId.trim().toLowerCase() === cleanId
       );
@@ -2501,9 +2516,9 @@ export default function App() {
                             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">สลับวิชาเพื่อแสดงผลคะแนนและสื่อการเรียนสอน:</span>
                             <div className="flex flex-wrap gap-2">
                               {matchingStudentRecords.map(record => {
-                                const { subjectId: subId, classroomId: clsId } = parseCourseKey(record.courseKey);
-                                const subjectName = appData.subjects.find(s => s.id === subId)?.name || 'วิชาเรียน';
-                                const className = appData.classRooms.find(c => c.id === clsId)?.name || 'ห้องเรียน';
+                                const match = matchCourseKey(record.courseKey, appData.subjects, appData.classRooms);
+                                const subjectName = match?.subject.name || 'วิชาเรียน';
+                                const className = match?.classroom.name || 'ห้องเรียน';
                                 const isActive = record.courseKey === foundStudent.courseKey;
                                 return (
                                   <button
@@ -2525,9 +2540,9 @@ export default function App() {
                           </div>
                         ) : (
                           (() => {
-                            const { subjectId: subId, classroomId: clsId } = parseCourseKey(foundStudent.courseKey);
-                            const subjectName = appData.subjects.find(s => s.id === subId)?.name || '';
-                            const className = appData.classRooms.find(c => c.id === clsId)?.name || '';
+                            const match = matchCourseKey(foundStudent.courseKey, appData.subjects, appData.classRooms);
+                            const subjectName = match?.subject.name || '';
+                            const className = match?.classroom.name || '';
                             return (
                               <div className="mt-2 text-left">
                                 <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-xl inline-block">
