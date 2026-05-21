@@ -153,6 +153,22 @@ const getGrade = (total: number): string => {
   return '0';
 };
 
+const parseCourseKey = (key: string) => {
+  if (!key) return { subjectId: '', classroomId: '' };
+  const cIndex = key.indexOf('-c-');
+  if (cIndex !== -1) {
+    return {
+      subjectId: key.substring(0, cIndex),
+      classroomId: key.substring(cIndex + 1)
+    };
+  }
+  const parts = key.split('-');
+  return {
+    subjectId: parts[0] || '',
+    classroomId: parts[1] || ''
+  };
+};
+
 export default function App() {
   const [appData, setAppData] = useState<AppData>({
     subjects: [],
@@ -481,12 +497,18 @@ export default function App() {
       const records = (appData.courses || {})[key] || [];
       const s = records.find(item => item.studentId.trim().toLowerCase() === foundStudent.studentId.trim().toLowerCase());
       if (s && !seenCourseKeys.has(s.courseKey)) {
-        seenCourseKeys.add(s.courseKey);
-        matched.push(s);
+        // Only show if the subject and classroom actually exist in database
+        const { subjectId, classroomId } = parseCourseKey(s.courseKey);
+        const subjectExists = appData.subjects.some(sub => sub.id === subjectId);
+        const classExists = appData.classRooms.some(cls => cls.id === classroomId);
+        if (subjectExists && classExists) {
+          seenCourseKeys.add(s.courseKey);
+          matched.push(s);
+        }
       }
     }
     return matched;
-  }, [appData.courses, foundStudent?.studentId]);
+  }, [appData.courses, foundStudent?.studentId, appData.subjects, appData.classRooms]);
 
   const [hasSearched, setHasSearched] = useState(false);
   const [studentFilterSubjectId, setStudentFilterSubjectId] = useState('');
@@ -2479,7 +2501,7 @@ export default function App() {
                             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">สลับวิชาเพื่อแสดงผลคะแนนและสื่อการเรียนสอน:</span>
                             <div className="flex flex-wrap gap-2">
                               {matchingStudentRecords.map(record => {
-                                const [subId, clsId] = record.courseKey.split('-');
+                                const { subjectId: subId, classroomId: clsId } = parseCourseKey(record.courseKey);
                                 const subjectName = appData.subjects.find(s => s.id === subId)?.name || 'วิชาเรียน';
                                 const className = appData.classRooms.find(c => c.id === clsId)?.name || 'ห้องเรียน';
                                 const isActive = record.courseKey === foundStudent.courseKey;
@@ -2503,7 +2525,7 @@ export default function App() {
                           </div>
                         ) : (
                           (() => {
-                            const [subId, clsId] = foundStudent.courseKey.split('-');
+                            const { subjectId: subId, classroomId: clsId } = parseCourseKey(foundStudent.courseKey);
                             const subjectName = appData.subjects.find(s => s.id === subId)?.name || '';
                             const className = appData.classRooms.find(c => c.id === clsId)?.name || '';
                             return (
@@ -2889,14 +2911,15 @@ export default function App() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {(appData.materials || [])
                   .filter(m => {
-                    const [subId, classId] = m.courseKey.split('-');
+                    const { subjectId: subId, classroomId: classId } = parseCourseKey(m.courseKey);
                     if (studentFilterSubjectId && subId !== studentFilterSubjectId) return false;
                     if (studentFilterClassId && classId !== studentFilterClassId) return false;
                     return true;
                   })
                   .map(material => {
-                    const associatedSubject = appData.subjects.find(s => s.id === material.courseKey.split('-')[0])?.name || '';
-                    const associatedClass = appData.classRooms.find(c => c.id === material.courseKey.split('-')[1])?.name || '';
+                    const { subjectId: subId, classroomId: classId } = parseCourseKey(material.courseKey);
+                    const associatedSubject = appData.subjects.find(s => s.id === subId)?.name || '';
+                    const associatedClass = appData.classRooms.find(c => c.id === classId)?.name || '';
                     
                     let iconColor = 'bg-slate-50 text-slate-500 border border-slate-100';
                     let label = 'ลิงก์ประกอบการเรียน';
@@ -2944,7 +2967,7 @@ export default function App() {
                   })}
 
                 {(appData.materials || []).filter(m => {
-                  const [subId, classId] = m.courseKey.split('-');
+                  const { subjectId: subId, classroomId: classId } = parseCourseKey(m.courseKey);
                   if (studentFilterSubjectId && subId !== studentFilterSubjectId) return false;
                   if (studentFilterClassId && classId !== studentFilterClassId) return false;
                   return true;
