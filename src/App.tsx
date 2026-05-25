@@ -182,6 +182,25 @@ const matchCourseKey = (key: string, subjects: Subject[], classRooms: ClassRoom[
   return null;
 };
 
+const studentCourseMatch = (itemCourseKey: string, studentCourseKey: string) => {
+  if (!itemCourseKey || !studentCourseKey) return false;
+  const k1 = itemCourseKey.trim().toLowerCase();
+  const k2 = studentCourseKey.trim().toLowerCase();
+  
+  // 1. Exact match
+  if (k1 === k2) return true;
+  
+  // 2. Fallback: match by subject ID
+  const p1 = parseCourseKey(k1);
+  const p2 = parseCourseKey(k2);
+  
+  if (p1.subjectId && p2.subjectId && p1.subjectId.trim().toLowerCase() === p2.subjectId.trim().toLowerCase()) {
+    return true;
+  }
+  
+  return false;
+};
+
 export default function App() {
   const [appData, setAppData] = useState<AppData>({
     subjects: [],
@@ -2773,7 +2792,7 @@ export default function App() {
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {(appData.assignments || [])
-                          .filter(assignment => assignment.courseKey === foundStudent.courseKey)
+                          .filter(assignment => studentCourseMatch(assignment.courseKey, foundStudent.courseKey))
                           .map(assignment => {
                             const submission = appData.submissions.find(s => s.assignmentId === assignment.id && s.studentId === foundStudent.studentId);
                             const isDone = !!submission;
@@ -2880,7 +2899,7 @@ export default function App() {
                             );
                           })}
 
-                        {(appData.assignments || []).filter(assignment => assignment.courseKey === foundStudent.courseKey).length === 0 && (
+                        {(appData.assignments || []).filter(assignment => studentCourseMatch(assignment.courseKey, foundStudent.courseKey)).length === 0 && (
                           <div className="md:col-span-3 text-center py-12">
                             <div className="w-16 h-16 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200 text-slate-300">
                               <Clock className="w-8 h-8" />
@@ -2902,7 +2921,7 @@ export default function App() {
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {(appData.materials || [])
-                          .filter(m => m.courseKey === foundStudent.courseKey)
+                          .filter(m => studentCourseMatch(m.courseKey, foundStudent.courseKey))
                           .map(material => {
                             let iconColor = 'bg-slate-50 text-slate-500 border border-slate-100';
                             let label = 'ลิงก์ประกอบการเรียน';
@@ -2947,7 +2966,7 @@ export default function App() {
                             );
                           })}
 
-                        {(appData.materials || []).filter(m => m.courseKey === foundStudent.courseKey).length === 0 && (
+                        {(appData.materials || []).filter(m => studentCourseMatch(m.courseKey, foundStudent.courseKey)).length === 0 && (
                           <div className="md:col-span-3 text-center py-12">
                             <div className="w-16 h-16 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200 text-slate-300">
                               <BookOpen className="w-8 h-8" />
