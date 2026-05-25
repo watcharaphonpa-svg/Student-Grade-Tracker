@@ -525,6 +525,9 @@ export default function App() {
   const [studentFilterSubjectId, setStudentFilterSubjectId] = useState('');
   const [studentFilterClassId, setStudentFilterClassId] = useState('');
 
+  const [studentLinkInput, setStudentLinkInput] = useState<Record<string, string>>({});
+  const [studentSubmissionMode, setStudentSubmissionMode] = useState<Record<string, 'file' | 'link'>>({});
+
   // Student-specific submission listener when searching
   useEffect(() => {
     if (!foundStudent || user?.email === 'watcharaphon_pa@t-tech.ac.th') return;
@@ -931,13 +934,6 @@ export default function App() {
 
     console.log('Starting file upload for:', file.name, 'Student:', student.studentId);
 
-    if (!isGoogleAuth) {
-      console.warn('Upload attempted without Google Auth');
-      showAlert('ยังเชื่อมต่อไม่ได้', '⚠️ กรุณาเชื่อมต่อ Google Drive ก่อนส่งงาน\n\nโหมดนักเรียนจำเป็นต้องให้อาจารย์เข้าสู่ระบบและ "เชื่อมต่อ Google Sheets" ก่อน เพื่อเปิดพื้นที่รับงานใน Drive', 'warning');
-      e.target.value = ''; // Reset input
-      return;
-    }
-
     setIsUploading(prev => ({ ...prev, [assignmentId]: true }));
     
     const formData = new FormData();
@@ -983,6 +979,45 @@ export default function App() {
     } finally {
       setIsUploading(prev => ({ ...prev, [assignmentId]: false }));
       if (e.target) e.target.value = ''; // Reset input to allow re-selection
+    }
+  };
+
+  const handleStudentLinkSubmit = async (assignmentId: string, student: Student) => {
+    let url = (studentLinkInput[assignmentId] || '').trim();
+    if (!url) {
+      showAlert('ข้อมูลไม่ครบถ้วน', 'กรุณากรอกลิงก์ส่งงานของคุณ', 'warning');
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'https://' + url;
+    }
+
+    setIsUploading(prev => ({ ...prev, [assignmentId]: true }));
+
+    try {
+      const subId = crypto.randomUUID();
+      const newSubmission: Submission = {
+        id: subId,
+        assignmentId,
+        studentId: student.studentId,
+        fileUrl: url,
+        fileName: 'ส่งงานด้วยลิงก์',
+        status: 'pending',
+        score: 0,
+        submittedAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, 'submissions', subId), newSubmission);
+      showAlert('ส่งงานสำเร็จ!', '✅ ส่งงานเรียบร้อยแล้ว!\nลิงก์งานของคุณได้รับการบันทึกเรียบร้อย', 'success');
+      
+      // Clear input
+      setStudentLinkInput(prev => ({ ...prev, [assignmentId]: '' }));
+    } catch (err: any) {
+      console.error('Link submit error:', err);
+      showAlert('เกิดข้อผิดพลาด', `❌ เกิดข้อผิดพลาด: ${err.message || 'ไม่สามารถส่งลิงก์ได้'}`, 'error');
+    } finally {
+      setIsUploading(prev => ({ ...prev, [assignmentId]: false }));
     }
   };
 
@@ -1976,7 +2011,7 @@ export default function App() {
                             <div className="flex items-center gap-3 mt-2">
                               <a href={sub.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors">
                                 <ExternalLink className="w-3.5 h-3.5" />
-                                เปิดดูงานใน Drive
+                                {sub.fileName === 'ส่งงานด้วยลิงก์' ? 'เปิดดูงานจากลิงก์' : 'เปิดดูงานใน Drive'}
                               </a>
                               <span className="text-xs text-slate-400">ส่งเมื่อ: {new Date(sub.submittedAt).toLocaleString('th-TH')}</span>
                             </div>
@@ -2053,9 +2088,19 @@ export default function App() {
                           </div>
                           <div className="flex items-center gap-4">
                             <span className="font-bold text-emerald-600">{sub.score} / {assignment?.maxScore}</span>
+                            <a 
+                              href={sub.fileUrl} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="text-slate-400 hover:text-indigo-600" 
+                              title={sub.fileName === 'ส่งงานด้วยลิงก์' ? 'เปิดดูงานจากลิงก์' : 'เปิดดูงานใน Drive'}
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
                             <button 
                               onClick={() => updateSubmissionScore(sub.id, 0)} // Reset to pending for re-grading
                               className="text-slate-400 hover:text-indigo-600"
+                              title="ส่งกลับเพื่อตรวจใหม่"
                             >
                               <Clock className="w-4 h-4" />
                             </button>
@@ -2760,17 +2805,75 @@ export default function App() {
                                       </a>
                                     </div>
                                   ) : (
-                                    <label className={`block w-full text-center py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer ${
-                                      uploading ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'
-                                    }`}>
-                                      {uploading ? 'Uploading...' : 'ส่งงานตอนนี้'}
-                                      <input 
-                                        type="file" 
-                                        className="hidden" 
-                                        disabled={uploading}
-                                        onChange={(e) => handleStudentFileUpload(e, assignment.id, foundStudent)} 
-                                      />
-                                    </label>
+                                    (() => {
+                                      const mode = studentSubmissionMode[assignment.id] || 'file';
+                                      return (
+                                        <div className="space-y-3">
+                                          {/* Mode Selector */}
+                                          <div className="flex bg-slate-100 p-1 rounded-xl">
+                                            <button
+                                              type="button"
+                                              onClick={() => setStudentSubmissionMode(prev => ({ ...prev, [assignment.id]: 'file' }))}
+                                              className={`flex-1 py-1.5 rounded-lg text-center text-[10px] font-extrabold transition-all cursor-pointer ${
+                                                mode === 'file'
+                                                  ? 'bg-white text-slate-800 shadow-sm'
+                                                  : 'text-slate-500 hover:text-slate-800'
+                                              }`}
+                                            >
+                                              แนบไฟล์ (File)
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setStudentSubmissionMode(prev => ({ ...prev, [assignment.id]: 'link' }))}
+                                              className={`flex-1 py-1.5 rounded-lg text-center text-[10px] font-extrabold transition-all cursor-pointer ${
+                                                mode === 'link'
+                                                  ? 'bg-white text-slate-800 shadow-sm'
+                                                  : 'text-slate-500 hover:text-slate-800'
+                                              }`}
+                                            >
+                                              ส่งเป็นลิงก์ (Link)
+                                            </button>
+                                          </div>
+
+                                          {mode === 'file' ? (
+                                            <label className={`block w-full text-center py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer ${
+                                              uploading ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'
+                                            }`}>
+                                              {uploading ? 'Uploading...' : 'เลือกไฟล์และส่ง'}
+                                              <input 
+                                                type="file" 
+                                                className="hidden" 
+                                                disabled={uploading}
+                                                onChange={(e) => handleStudentFileUpload(e, assignment.id, foundStudent)} 
+                                              />
+                                            </label>
+                                          ) : (
+                                            <div className="space-y-2">
+                                              <input
+                                                type="url"
+                                                placeholder="วางลิงก์ที่นี่ (https://...)"
+                                                value={studentLinkInput[assignment.id] || ''}
+                                                onChange={(e) => setStudentLinkInput(prev => ({ ...prev, [assignment.id]: e.target.value }))}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') {
+                                                    handleStudentLinkSubmit(assignment.id, foundStudent);
+                                                  }
+                                                }}
+                                                className="w-full bg-white border border-slate-250 focus:border-indigo-500 rounded-xl px-3 py-2 text-xs outline-none focus:ring-4 focus:ring-indigo-105 font-medium placeholder-slate-400 transition-all"
+                                              />
+                                              <button
+                                                type="button"
+                                                disabled={uploading}
+                                                onClick={() => handleStudentLinkSubmit(assignment.id, foundStudent)}
+                                                className={`w-full py-3 rounded-xl font-bold text-[10px] tracking-widest uppercase transition-all text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-100 flex items-center justify-center gap-1.5 cursor-pointer`}
+                                              >
+                                                {uploading ? 'กำลังส่งข้อมูล...' : 'ส่งลิงก์งาน'}
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })()
                                   )}
                                 </div>
                               </div>

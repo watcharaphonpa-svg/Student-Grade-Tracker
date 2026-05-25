@@ -9,6 +9,8 @@ import fs from "fs";
 
 dotenv.config();
 
+const TOKENS_FILE = path.join(process.cwd(), "google_tokens.json");
+
 const app = express();
 const PORT = 3000;
 
@@ -76,6 +78,14 @@ app.get(["/auth/google/callback", "/api/auth/google/callback"], async (req, res)
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
+    
+    // Also backup tokens to local file system so students on separate devices can access teacher's storage fallback
+    try {
+      fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens), "utf8");
+    } catch (saveError) {
+      console.error("Failed to write TOKENS_FILE:", saveError);
+    }
+    
     res.send(`<html><body><script>if(window.opener){window.opener.postMessage({type:'OAUTH_AUTH_SUCCESS'},'*');window.close();}else{window.location.href='/';}</script></body></html>`);
   } catch (error) {
     res.status(500).send("Authentication failed");
@@ -83,16 +93,25 @@ app.get(["/auth/google/callback", "/api/auth/google/callback"], async (req, res)
 });
 
 app.get("/api/auth/status", (req, res) => {
-  res.json({ isAuthenticated: !!req.cookies.google_tokens });
+  const hasCookie = !!req.cookies.google_tokens;
+  const hasFile = fs.existsSync(TOKENS_FILE);
+  res.json({ isAuthenticated: hasCookie || hasFile });
 });
 
 app.post("/api/auth/logout", (req, res) => {
   res.clearCookie("google_tokens", { secure: true, sameSite: "none" });
+  try {
+    if (fs.existsSync(TOKENS_FILE)) {
+      fs.unlinkSync(TOKENS_FILE);
+    }
+  } catch (err) {
+    console.error("Failed to delete TOKENS_FILE on logout:", err);
+  }
   res.json({ success: true });
 });
 
 app.post("/api/sheets/sync", async (req, res) => {
-  const tokensStr = req.cookies.google_tokens;
+  const tokensStr = req.cookies.google_tokens || (fs.existsSync(TOKENS_FILE) ? fs.readFileSync(TOKENS_FILE, "utf8") : null);
   if (!tokensStr) return res.status(401).json({ error: "Not authenticated" });
   try {
     const tokens = JSON.parse(tokensStr);
@@ -254,23 +273,78 @@ app.post("/api/sheets/sync", async (req, res) => {
 });
 
 app.post("/api/drive/upload", upload.single("file"), async (req, res) => {
-  const tokensStr = req.cookies.google_tokens;
-  if (!tokensStr || !req.file) return res.status(401).json({ error: "Missing tokens or file" });
+  if (!req.file) {
+    return res.status(400).json({ error: "No file was uploaded." });
+  }
+
+  const tokensStr = req.cookies.google_tokens || (fs.existsSync(TOKENS_FILE) ? fs.readFileSync(TOKENS_FILE, "utf8") : null);
+  const { studentId, assignmentId, studentName } = req.body;
+
+  if (!tokensStr) {
+    console.log("Student Upload: No Google tokens found. Depositing to local storage fallback...");
+    try {
+      const filename = `${Date.now()}_student_${studentId || 'unknown'}_${req.file.originalname}`;
+      const filePath = path.join(UPLOADS_DIR, filename);
+      fs.writeFileSync(filePath, req.file.buffer);
+
+      const protocol = req.headers["x-forwarded-proto"] || "https";
+      const host = req.headers.host;
+      const downloadUrl = `${protocol}://${host}/api/uploads/${encodeURIComponent(filename)}`;
+
+      console.log(`Student Upload: Successfully saved locally at '${filePath}'. URL: ${downloadUrl}`);
+      return res.json({ success: true, url: downloadUrl, isLocal: true });
+    } catch (err: any) {
+      console.error("Student Upload: Local file saving failed.", err);
+      return res.status(500).json({ error: `Local file saving failed: ${err.message}` });
+    }
+  }
+
+  // Google Drive upload when authenticated
   try {
     const tokens = JSON.parse(tokensStr);
     const client = getOAuth2Client(req);
     client.setCredentials(tokens);
     const drive = google.drive({ version: "v3", auth: client });
-    const { studentId, assignmentId, studentName } = req.body;
-    const fileName = `${studentId}_${studentName}_${assignmentId}_${req.file.originalname}`;
+    
+    const fileName = `${studentId || 'unknown'}_${studentName || 'unknown'}_${assignmentId || 'unknown'}_${req.file.originalname}`;
     const file = await drive.files.create({
       requestBody: { name: fileName },
       media: { mimeType: req.file.mimetype, body: Readable.from(req.file.buffer) },
       fields: "id, webViewLink",
     });
+
+    // Make the student file public so teachers and anyone can view it
+    try {
+      await drive.permissions.create({
+        fileId: file.data.id!,
+        requestBody: {
+          role: "reader",
+          type: "anyone",
+        },
+      });
+      console.log(`Student Upload: Drive file ${file.data.id} made public.`);
+    } catch (permError: any) {
+      console.warn("Student Upload: Unable to make Drive file public:", permError.message);
+    }
+
     res.json({ success: true, fileId: file.data.id, url: file.data.webViewLink });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.warn(`Student Upload: Google Drive upload failed (${error.message}). Falling back to local storage...`);
+    try {
+      const filename = `${Date.now()}_student_${studentId || 'unknown'}_${req.file.originalname}`;
+      const filePath = path.join(UPLOADS_DIR, filename);
+      fs.writeFileSync(filePath, req.file.buffer);
+
+      const protocol = req.headers["x-forwarded-proto"] || "https";
+      const host = req.headers.host;
+      const downloadUrl = `${protocol}://${host}/api/uploads/${encodeURIComponent(filename)}`;
+
+      console.log(`Student Upload Fallback (Local): Successfully saved locally. URL: ${downloadUrl}`);
+      res.json({ success: true, url: downloadUrl, isLocal: true, warn: error.message });
+    } catch (err: any) {
+      console.error("Student Upload Fallback: Saving locally failed.", err);
+      res.status(500).json({ error: `Upload failed: ${error.message} | Local error: ${err.message}` });
+    }
   }
 });
 
@@ -288,7 +362,7 @@ app.post("/api/drive/upload-material", upload.single("file"), async (req, res) =
 
   console.log(`Upload Material: Received file '${req.file.originalname}' (${req.file.size} bytes, type: ${req.file.mimetype})`);
 
-  const tokensStr = req.cookies.google_tokens;
+  const tokensStr = req.cookies.google_tokens || (fs.existsSync(TOKENS_FILE) ? fs.readFileSync(TOKENS_FILE, "utf8") : null);
   if (!tokensStr) {
     console.log("Upload Material: No Google tokens found. Depositing to local storage fallback...");
     // Local fallback when not logged in to Google Workspace
