@@ -14,7 +14,7 @@ import html2canvas from 'html2canvas';
 
 import { 
   collection, onSnapshot, doc, setDoc, updateDoc, 
-  deleteDoc, query, where, getDocs 
+  deleteDoc, query, where, getDocs, getDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { db, auth, signInWithGoogle } from './lib/firebase';
@@ -1041,28 +1041,55 @@ export default function App() {
   };
 
   const updateSubmissionScore = async (submissionId: string, score: number) => {
-    // 1. Update the submission status/score
+    // 1. Update the submission status/score in Firestore
     await updateDoc(doc(db, 'submissions', submissionId), { score, status: 'graded' });
 
-    // 2. Find the submission in state to get meta info
-    const submission = appData.submissions.find(s => s.id === submissionId);
-    if (!submission) return;
+    // 2. Fetch the submission from Firestore directly to prevent state staleness issues
+    const submissionSnap = await getDoc(doc(db, 'submissions', submissionId));
+    if (!submissionSnap.exists()) {
+      console.warn(`Submission ${submissionId} not found in Firestore`);
+      return;
+    }
+    const submission = submissionSnap.data() as Submission;
 
-    // 3. Find the assignment to know where to map the score
-    const assignment = appData.assignments.find(a => a.id === submission.assignmentId);
-    if (!assignment || !assignment.targetAssignment || !assignment.targetPart) return;
+    // 3. Find/Fetch the assignment to know where to map the score
+    let assignment = appData.assignments.find(a => a.id === submission.assignmentId);
+    if (!assignment) {
+      const assignmentSnap = await getDoc(doc(db, 'assignments', submission.assignmentId));
+      if (assignmentSnap.exists()) {
+        assignment = assignmentSnap.data() as Assignment;
+      }
+    }
+    if (!assignment || !assignment.targetAssignment || !assignment.targetPart) {
+      console.warn(`Assignment missing target information or does not exist for: ${submission.assignmentId}`);
+      return;
+    }
 
-    // 4. Update the student's manual field
+    // 4. Update the student's manual field matching studentId AND courseKey (using fallback helper)
     const q = query(collection(db, 'students'), where('studentId', '==', submission.studentId));
     const snap = await getDocs(q);
     
     if (!snap.empty) {
-      const studentDoc = snap.docs[0];
-      const fieldPath = `assignment${assignment.targetAssignment}.part${assignment.targetPart}`;
+      const studentDoc = snap.docs.find(doc => {
+        const studentData = doc.data() as Student;
+        return studentCourseMatch(assignment.courseKey, studentData.courseKey);
+      }) || snap.docs[0];
+
+      const studentData = studentDoc.data() as Student;
+      const assignmentKey = `assignment${assignment.targetAssignment}` as keyof Student;
+      const currentAssignment = (studentData[assignmentKey] || { part1: 0, part2: 0, part3: 0 }) as SubScores;
+      const partKey = `part${assignment.targetPart}`;
+      
+      const updatedAssignment = {
+        ...currentAssignment,
+        [partKey]: score
+      };
+
       await updateDoc(studentDoc.ref, {
-        [fieldPath]: score
+        [assignmentKey]: updatedAssignment
       });
-      console.log(`Mapped score ${score} to student ${submission.studentId} field ${fieldPath}`);
+
+      console.log(`Successfully mapped score ${score} to student ${submission.studentId} field ${assignmentKey}.${partKey}`);
     }
   };
 
