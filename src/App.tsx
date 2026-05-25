@@ -1060,10 +1060,13 @@ export default function App() {
         assignment = assignmentSnap.data() as Assignment;
       }
     }
-    if (!assignment || !assignment.targetAssignment || !assignment.targetPart) {
-      console.warn(`Assignment missing target information or does not exist for: ${submission.assignmentId}`);
+    if (!assignment) {
+      console.warn(`Assignment does not exist for: ${submission.assignmentId}`);
       return;
     }
+
+    const targetAssignment = assignment.targetAssignment || 1;
+    const targetPart = assignment.targetPart || 1;
 
     // 4. Update the student's manual field matching studentId AND courseKey (using fallback helper)
     // Find all student records to perform space/case insensitive matching of student ID
@@ -1083,9 +1086,9 @@ export default function App() {
     
     if (studentDoc) {
       const studentData = studentDoc.data() as Student;
-      const assignmentKey = `assignment${assignment.targetAssignment}` as keyof Student;
+      const assignmentKey = `assignment${targetAssignment}` as keyof Student;
       const currentAssignment = (studentData[assignmentKey] || { part1: 0, part2: 0, part3: 0 }) as SubScores;
-      const partKey = `part${assignment.targetPart}`;
+      const partKey = `part${targetPart}`;
       
       const updatedAssignment = {
         ...currentAssignment,
@@ -1184,7 +1187,9 @@ export default function App() {
       if (!match) continue; // Skip deleted/inactive courses
 
       const student = (appData.courses || {})[key].find(
-        s => s.studentId.trim().toLowerCase() === cleanId
+        s => (s.studentId || '').trim().toLowerCase() === cleanId ||
+             (s.name || '').trim().toLowerCase().includes(cleanId) ||
+             (s.no || '').trim().toLowerCase() === cleanId
       );
       if (student) {
         found = student;
