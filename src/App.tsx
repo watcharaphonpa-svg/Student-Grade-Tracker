@@ -1066,15 +1066,22 @@ export default function App() {
     }
 
     // 4. Update the student's manual field matching studentId AND courseKey (using fallback helper)
-    const q = query(collection(db, 'students'), where('studentId', '==', submission.studentId));
-    const snap = await getDocs(q);
+    // Find all student records to perform space/case insensitive matching of student ID
+    const snap = await getDocs(collection(db, 'students'));
+    const cleanSubStudentId = (submission.studentId || '').trim().toLowerCase();
     
-    if (!snap.empty) {
-      const studentDoc = snap.docs.find(doc => {
-        const studentData = doc.data() as Student;
-        return studentCourseMatch(assignment.courseKey, studentData.courseKey);
-      }) || snap.docs[0];
-
+    // Find student document matching both studentId (space/case-insensitive) and courseKey
+    const studentDoc = snap.docs.find(doc => {
+      const studentData = doc.data() as Student;
+      return (studentData.studentId || '').trim().toLowerCase() === cleanSubStudentId &&
+             studentCourseMatch(assignment.courseKey, studentData.courseKey);
+    }) || snap.docs.find(doc => {
+      // Fallback: match by studentId (space/case-insensitive) only
+      const studentData = doc.data() as Student;
+      return (studentData.studentId || '').trim().toLowerCase() === cleanSubStudentId;
+    });
+    
+    if (studentDoc) {
       const studentData = studentDoc.data() as Student;
       const assignmentKey = `assignment${assignment.targetAssignment}` as keyof Student;
       const currentAssignment = (studentData[assignmentKey] || { part1: 0, part2: 0, part3: 0 }) as SubScores;
@@ -1090,6 +1097,8 @@ export default function App() {
       });
 
       console.log(`Successfully mapped score ${score} to student ${submission.studentId} field ${assignmentKey}.${partKey}`);
+    } else {
+      console.warn(`Could not find student matching studentId: "${submission.studentId}"`);
     }
   };
 
@@ -1838,7 +1847,7 @@ export default function App() {
                                           
                                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                                             {(appData.assignments || []).filter(a => a.courseKey === currentCourseKey).map(assignment => {
-                                              const submission = (appData.submissions || []).find(s => s.assignmentId === assignment.id && s.studentId === student.studentId);
+                                              const submission = (appData.submissions || []).find(s => s.assignmentId === assignment.id && (s.studentId || '').trim().toLowerCase() === (student.studentId || '').trim().toLowerCase());
                                               return (
                                                 <div key={assignment.id} className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 hover:border-indigo-100 transition-all">
                                                   <div className="flex flex-col h-full justify-between gap-3">
@@ -2042,7 +2051,7 @@ export default function App() {
                       // Search across all courses for the student
                       let student: Student | undefined;
                       for (const key in (appData.courses || {})) {
-                        student = (appData.courses || {})[key].find(s => s.studentId === sub.studentId);
+                        student = (appData.courses || {})[key].find(s => (s.studentId || '').trim().toLowerCase() === (sub.studentId || '').trim().toLowerCase());
                         if (student) break;
                       }
                       
@@ -2123,7 +2132,7 @@ export default function App() {
                       // Search across all courses for the student
                       let student: Student | undefined;
                       for (const key in (appData.courses || {})) {
-                        student = (appData.courses || {})[key].find(s => s.studentId === sub.studentId);
+                        student = (appData.courses || {})[key].find(s => (s.studentId || '').trim().toLowerCase() === (sub.studentId || '').trim().toLowerCase());
                         if (student) break;
                       }
                       return (
@@ -2731,7 +2740,7 @@ export default function App() {
                        </div>
 
                        {(() => {
-                         const studentRecords = (appData.attendance || []).filter(a => a.studentId === foundStudent.studentId);
+                         const studentRecords = (appData.attendance || []).filter(a => (a.studentId || '').trim().toLowerCase() === (foundStudent.studentId || '').trim().toLowerCase());
                          const counts = {
                            present: studentRecords.filter(a => a.status === 'present').length,
                            late: studentRecords.filter(a => a.status === 'late').length,
@@ -2821,7 +2830,7 @@ export default function App() {
                         {(appData.assignments || [])
                           .filter(assignment => studentCourseMatch(assignment.courseKey, foundStudent.courseKey))
                           .map(assignment => {
-                            const submission = appData.submissions.find(s => s.assignmentId === assignment.id && s.studentId === foundStudent.studentId);
+                            const submission = appData.submissions.find(s => s.assignmentId === assignment.id && (s.studentId || '').trim().toLowerCase() === (foundStudent.studentId || '').trim().toLowerCase());
                             const isDone = !!submission;
                             const uploading = isUploading[assignment.id];
 
