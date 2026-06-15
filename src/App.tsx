@@ -5,7 +5,7 @@ import {
   Loader2, Search, FileText, CheckCircle2, Clock, User, Upload, 
   BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle,
   Link, Check, MoreVertical, LogOut, FileDown, Download, FileType,
-  StickyNote
+  StickyNote, UserPlus, ArrowUpDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import jsPDF from 'jspdf';
@@ -39,6 +39,7 @@ interface Student {
   assignment3: SubScores;
   midterm: number;
   final: number;
+  isNewTransferred?: boolean;
 }
 
 interface Subject {
@@ -312,6 +313,15 @@ export default function App() {
   }, [user]); // Re-run when user changes to update submission listener
 
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
+  const [addStudentTab, setAddStudentTab] = useState<'individual' | 'file' | 'excel'>('individual');
+  const [singleStudentInput, setSingleStudentInput] = useState({
+    no: '',
+    studentId: '',
+    name: '',
+    isNewTransferred: false
+  });
+  const [excelPasteInput, setExcelPasteInput] = useState('');
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [isGradingCriteriaModalOpen, setIsGradingCriteriaModalOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
@@ -366,6 +376,18 @@ export default function App() {
   const currentCourseKey = `${selectedSubjectId}-${selectedClassId}`;
   const students = useMemo(() => (appData.courses || {})[currentCourseKey] || [], [appData.courses, currentCourseKey]);
   const currentAssignments = useMemo(() => (appData.assignments || []).filter(a => a.courseKey === currentCourseKey), [appData.assignments, currentCourseKey]);
+
+  const [studentFilter, setStudentFilter] = useState<'all' | 'normal' | 'transferred'>('all');
+
+  const filteredStudents = useMemo(() => {
+    if (studentFilter === 'transferred') {
+      return students.filter(s => s.isNewTransferred);
+    }
+    if (studentFilter === 'normal') {
+      return students.filter(s => !s.isNewTransferred);
+    }
+    return students;
+  }, [students, studentFilter]);
 
   const [isUploading, setIsUploading] = useState<Record<string, boolean>>({});
   const [submissionScores, setSubmissionScores] = useState<Record<string, string>>({});
@@ -728,13 +750,31 @@ export default function App() {
     }
   };
 
-  const addStudent = async () => {
-    const id = crypto.randomUUID();
-    const newStudent: Student = {
-      id,
+  const addStudent = () => {
+    setSingleStudentInput({
       no: (students.length + 1).toString(),
       studentId: '',
       name: '',
+      isNewTransferred: false
+    });
+    setAddStudentTab('individual');
+    setIsAddStudentModalOpen(true);
+  };
+
+  const handleSaveIndividualStudent = async (keepOpen: boolean) => {
+    const sId = singleStudentInput.studentId.trim();
+    const sName = singleStudentInput.name.trim();
+    if (!sId || !sName) {
+      showAlert('กรุณากรอกข้อมูล', 'ระบุรหัสนักเรียนและชื่อ-นามสุกล ให้ครบถ้วน', 'warning');
+      return;
+    }
+
+    const id = crypto.randomUUID();
+    const newStudent: Student = {
+      id,
+      no: (singleStudentInput.no || (students.length + 1).toString()).trim(),
+      studentId: sId,
+      name: sName,
       courseKey: currentCourseKey,
       behavior: 0,
       attendance: 0,
@@ -742,9 +782,98 @@ export default function App() {
       assignment2: { part1: 0, part2: 0, part3: 0 },
       assignment3: { part1: 0, part2: 0, part3: 0 },
       midterm: 0,
-      final: 0
+      final: 0,
+      isNewTransferred: singleStudentInput.isNewTransferred
     };
-    await setDoc(doc(db, 'students', id), newStudent);
+
+    try {
+      await setDoc(doc(db, 'students', id), newStudent);
+      showAlert('สำเร็จ!', `เพิ่มข้อมูลนักเรียน ${sName} เข้าสู่ระบบสำเร็จ`, 'success');
+      
+      if (keepOpen) {
+        setSingleStudentInput(prev => ({
+          no: (Number(prev.no) ? Number(prev.no) + 1 : students.length + 2).toString(),
+          studentId: '',
+          name: '',
+          isNewTransferred: prev.isNewTransferred
+        }));
+      } else {
+        setIsAddStudentModalOpen(false);
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert('เกิดข้อผิดพลาด', 'ไม่สามารถเพิ่มข้อมูลนักเรียนรายนี้ได้', 'error');
+    }
+  };
+
+  const handleImportPastedText = async () => {
+    const rawText = excelPasteInput.trim();
+    if (!rawText) {
+      showAlert('กรุณาวางข้อมูล', 'กรุณาวางรายชื่อนักเรียนจาก Excel หรือพิมพ์รูปแบบที่ถูกต้องก่อนกดยืนยัน', 'warning');
+      return;
+    }
+
+    const lines = rawText.split('\n');
+    let count = 0;
+    const batchPromises = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      let parts = line.split('\t').map(p => p.trim());
+      if (parts.length < 2) {
+        parts = line.split(',').map(p => p.trim());
+      }
+
+      let no = '';
+      let studentId = '';
+      let name = '';
+
+      if (parts.length >= 3) {
+        no = parts[0];
+        studentId = parts[1];
+        name = parts[2];
+      } else if (parts.length === 2) {
+        no = (students.length + count + 1).toString();
+        studentId = parts[0];
+        name = parts[1];
+      } else {
+        no = (students.length + count + 1).toString();
+        studentId = `std-${Date.now()}-${count}`;
+        name = parts[0];
+      }
+
+      const id = crypto.randomUUID();
+      const newStudent: Student = {
+        id,
+        no,
+        studentId,
+        name,
+        courseKey: currentCourseKey,
+        behavior: 0,
+        attendance: 0,
+        assignment1: { part1: 0, part2: 0, part3: 0 },
+        assignment2: { part1: 0, part2: 0, part3: 0 },
+        assignment3: { part1: 0, part2: 0, part3: 0 },
+        midterm: 0,
+        final: 0,
+        isNewTransferred: singleStudentInput.isNewTransferred
+      };
+
+      batchPromises.push(setDoc(doc(db, 'students', id), newStudent));
+      count++;
+    }
+
+    try {
+      await Promise.all(batchPromises);
+      showAlert('บันทึกสำเร็จ!', `นำเข้ารายชื่อนักเรียนสำเร็จ ${count} รายการ เรียบร้อยแล้ว`, 'success');
+      setExcelPasteInput('');
+      setIsAddStudentModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      showAlert('ผิดพลาด', 'เกิดข้อผิดพลาดระหว่างนำรายชื่อนักเรียนเข้าระบบ', 'error');
+    }
   };
 
   const removeStudent = async (id: string) => {
@@ -852,7 +981,8 @@ export default function App() {
           assignment2: { part1: 0, part2: 0, part3: 0 },
           assignment3: { part1: 0, part2: 0, part3: 0 },
           midterm: 0,
-          final: 0
+          final: 0,
+          isNewTransferred: false
         };
         await setDoc(doc(db, 'students', id), newStudent);
         count++;
@@ -1556,7 +1686,7 @@ export default function App() {
                               </p>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-55 flex-row">
+                            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 flex-row">
                               <div className="space-y-1 text-left">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">นักเรียน</p>
                                 <p className="text-xl font-black text-slate-800">{studentCount} คน</p>
@@ -1569,7 +1699,7 @@ export default function App() {
                           </div>
                           
                           <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between group-hover:bg-indigo-50 transition-colors">
-                            <span className="text-sm font-bold text-slate-500 group-hover:text-indigo-600">เข้าสู่ระบบจัดการคะแนน</span>
+                            <span className="text-sm font-bold text-slate-500 group-hover:text-indigo-650">เข้าสู่ระบบจัดการคะแนน</span>
                             <div className="p-2 bg-white rounded-xl shadow-sm text-slate-300 group-hover:text-indigo-600 transition-all duration-300">
                               <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
                             </div>
@@ -1632,7 +1762,7 @@ export default function App() {
             {teacherTab === 'grades' && (
               <>
                 {/* Stats Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                   <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
                     <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
                       <Users className="w-6 h-6" />
@@ -1640,6 +1770,15 @@ export default function App() {
                     <div>
                       <p className="text-sm font-medium text-slate-500">นักเรียนทั้งหมด</p>
                       <p className="text-2xl font-bold">{students.length} คน</p>
+                    </div>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+                    <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
+                      <UserPlus className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-slate-500">ย้ายเข้าใหม่</p>
+                      <p className="text-2xl font-bold">{students.filter(s => s.isNewTransferred).length} คน</p>
                     </div>
                   </div>
                   <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
@@ -1662,8 +1801,49 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Filter and Title Row */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-8 pb-1">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800">รายชื่อบันทึกคะแนนในชั้นเรียน</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">รวมเกรดและคะแนนกิจกรรม ทั้งหมดในภาคเรียน</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 max-w-full overflow-x-auto self-start sm:self-auto">
+                    <button
+                      onClick={() => setStudentFilter('all')}
+                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all duration-205 ${
+                        studentFilter === 'all'
+                          ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/50 scale-102 font-extrabold'
+                          : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'
+                      }`}
+                    >
+                      นักเรียนทั้งหมด ({students.length})
+                    </button>
+                    <button
+                      onClick={() => setStudentFilter('normal')}
+                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all duration-205 ${
+                        studentFilter === 'normal'
+                          ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/50 scale-102 font-extrabold'
+                          : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'
+                      }`}
+                    >
+                      ปกติ ({students.filter(s => !s.isNewTransferred).length})
+                    </button>
+                    <button
+                      onClick={() => setStudentFilter('transferred')}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black transition-all duration-205 ${
+                        studentFilter === 'transferred'
+                          ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100 scale-102 font-extrabold'
+                          : 'text-indigo-600 hover:text-indigo-755 hover:bg-white/45'
+                      }`}
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" />
+                      ย้ายเข้าใหม่ ({students.filter(s => s.isNewTransferred).length})
+                    </button>
+                  </div>
+                </div>
+
                 {/* Main Table */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-4">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse min-w-[1000px]">
                       <thead>
@@ -1683,7 +1863,7 @@ export default function App() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         <AnimatePresence initial={false}>
-                          {students.map((student) => {
+                          {filteredStudents.map((student) => {
                             const total = calculateTotal(student);
                             const grade = getGrade(total);
                             const isExp = isExpanded[student.id];
@@ -1714,13 +1894,27 @@ export default function App() {
                                     />
                                   </td>
                                   <td className="p-2">
-                                    <input 
-                                      type="text" 
-                                      placeholder="ชื่อ-นามสกุล..."
-                                      value={student.name}
-                                      onChange={(e) => updateStudent(student.id, 'name', e.target.value)}
-                                      className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-indigo-50/40 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-3 py-1.5 outline-none transition-all duration-200 font-bold text-slate-800"
-                                    />
+                                    <div className="flex items-center gap-2 group/name-container">
+                                      <input 
+                                        type="text" 
+                                        placeholder="ชื่อ-นามสกุล..."
+                                        value={student.name}
+                                        onChange={(e) => updateStudent(student.id, 'name', e.target.value)}
+                                        className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-indigo-50/40 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-3 py-1.5 outline-none transition-all duration-200 font-bold text-slate-800"
+                                      />
+                                      <button
+                                        onClick={() => updateStudent(student.id, 'isNewTransferred', !student.isNewTransferred)}
+                                        className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold transition-all border ${
+                                          student.isNewTransferred
+                                            ? 'bg-rose-50 text-rose-605 border-rose-200 hover:bg-rose-100 shadow-xs'
+                                            : 'bg-slate-50 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 border-slate-200 hover:border-indigo-200 opacity-0 group-hover/name-container:opacity-100 focus:opacity-100'
+                                        }`}
+                                        title={student.isNewTransferred ? "คลิกเพื่อยกเลิกสถานะย้ายเข้าใหม่" : "คลิกเพื่อทำเครื่องหมายเป็นนักเรียนย้ายเข้าใหม่"}
+                                      >
+                                        <UserPlus className="w-3 h-3" />
+                                        <span>{student.isNewTransferred ? 'ย้ายเข้าใหม่' : 'ปกติ'}</span>
+                                      </button>
+                                    </div>
                                   </td>
                                   <td className="p-2 text-center">
                                     <input 
@@ -2440,7 +2634,12 @@ export default function App() {
                             >
                               <td className="p-4 font-mono text-sm text-slate-400 group-hover:text-indigo-600 w-16">{student.no}</td>
                               <td className="p-4">
-                                <p className="font-bold text-slate-700 leading-tight">{student.name}</p>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="font-bold text-slate-700 leading-tight">{student.name}</p>
+                                  {student.isNewTransferred && (
+                                    <span className="bg-rose-50 text-rose-605 border border-rose-100 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">ย้ายเข้า</span>
+                                  )}
+                                </div>
                                 <p className="text-[10px] text-slate-400 font-mono">{student.studentId}</p>
                               </td>
                               <td className="p-4">
@@ -2579,8 +2778,8 @@ export default function App() {
                           }}
                           className="bg-slate-50 hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-250 text-slate-600 hover:text-indigo-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1 shadow-2xs"
                         >
-                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300 group-hover:bg-indigo-400" />
-                          {st.name} ({st.studentId})
+                          <span className={`w-1.5 h-1.5 rounded-full ${st.isNewTransferred ? 'bg-rose-450 animate-pulse' : 'bg-slate-300'}`} />
+                          {st.name} ({st.studentId}){st.isNewTransferred && <span className="text-[9px] text-rose-550 font-black ml-0.5 bg-rose-50 px-1 rounded-sm">ย้ายเข้า</span>}
                         </button>
                       ))}
                   </div>
@@ -2667,6 +2866,12 @@ export default function App() {
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NO</span>
                             <span className="text-sm font-black text-slate-700 leading-none">{foundStudent.no}</span>
                           </div>
+                          {foundStudent.isNewTransferred && (
+                            <div className="flex items-center gap-2 bg-rose-50 px-4 py-2 rounded-2xl border border-rose-200/50">
+                              <span className="text-[10px] font-black text-rose-550 uppercase tracking-widest">STATUS</span>
+                              <span className="text-sm font-black text-rose-600 leading-none">นักเรียนย้ายเข้าใหม่</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -3537,6 +3742,316 @@ export default function App() {
                     </div>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add New/Transferred Student Modal */}
+      <AnimatePresence>
+        {isAddStudentModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddStudentModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white rounded-[32px] w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 z-10"
+            >
+              {/* Modal Header */}
+              <div className="p-6 pb-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 text-left">
+                <div className="flex items-center gap-3.5 text-left">
+                  <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm">
+                    <UserPlus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-800">ระบบเพิ่มรายชื่อนักเรียน</h3>
+                    <p className="text-xs text-slate-500 font-medium">เพิ่มข้อมูลนักเรียนใหม่ นักเรียนทั่วไป หรือนักเรียนย้ายเข้า</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsAddStudentModalOpen(false)} 
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Tab Switcher for Importing */}
+              <div className="flex border-b border-slate-100 bg-slate-50/50 p-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAddStudentTab('individual')}
+                  className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer ${
+                    addStudentTab === 'individual'
+                      ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/50 font-extrabold'
+                      : 'text-slate-500 hover:bg-white/40 hover:text-slate-800'
+                  }`}
+                >
+                  <UserPlus className="w-4 h-4 text-indigo-500" />
+                  เพิ่มทีละคน
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddStudentTab('excel')}
+                  className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer ${
+                    addStudentTab === 'excel'
+                      ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/50 font-extrabold'
+                      : 'text-slate-500 hover:bg-white/40 hover:text-slate-800'
+                  }`}
+                >
+                  <FileText className="w-4 h-4 text-emerald-500" />
+                  คัดลอกจาก Excel / พิมพ์ลิสต์
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddStudentTab('file')}
+                  className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer ${
+                    addStudentTab === 'file'
+                      ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/50 font-extrabold'
+                      : 'text-slate-500 hover:bg-white/40 hover:text-slate-800'
+                  }`}
+                >
+                  <Upload className="w-4 h-4 text-amber-500" />
+                  อัปโหลดไฟล์ CSV
+                </button>
+              </div>
+
+              {/* Global Mark New/Transferred Switch */}
+              <div className="p-4 px-6 bg-rose-50/45 border-b border-rose-100 flex items-center justify-between gap-4 text-left">
+                <div className="flex items-start gap-2.5 text-left">
+                  <Info className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold text-rose-800">ต้องการทำเครื่องหมายเป็น "นักเรียนย้ายเข้าใหม่" ใช่ไหม?</p>
+                    <p className="text-[10px] text-rose-600/90 font-medium">ระบบจะแสดงสัญลักษณ์ "ย้ายเข้า" และแยกกลุ่มคัดกรองให้อัตโนมัติในทุกส่วนของระบบ</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={singleStudentInput.isNewTransferred} 
+                    onChange={(e) => setSingleStudentInput(prev => ({ ...prev, isNewTransferred: e.target.checked }))}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-350 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-505 bg-rose-600 bg-slate-300 peer-checked:bg-rose-500" />
+                </label>
+              </div>
+
+              {/* Modal Content container */}
+              <div className="p-6 overflow-y-auto max-h-[55vh] custom-scrollbar text-left font-sans">
+                
+                {/* 1. INDIVIDUAL FORM */}
+                {addStudentTab === 'individual' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5">เลขที่</label>
+                        <input 
+                          type="text" 
+                          placeholder="เช่น 1, 2, 3..."
+                          value={singleStudentInput.no}
+                          onChange={(e) => setSingleStudentInput(prev => ({ ...prev, no: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 rounded-2xl px-4 py-3 outline-none transition-all duration-200 font-medium text-slate-800 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5">รหัสนักเรียน (ประจำตัว)</label>
+                        <input 
+                          type="text" 
+                          placeholder="เช่น 66309010001"
+                          value={singleStudentInput.studentId}
+                          onChange={(e) => setSingleStudentInput(prev => ({ ...prev, studentId: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 rounded-2xl px-4 py-3 outline-none transition-all duration-200 font-medium text-slate-800 text-sm font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5">ชื่อ - นามสกุล นักเรียน</label>
+                      <input 
+                        type="text" 
+                        placeholder="คำนำหน้าตามด้วยชื่อและนามสกุล (เช่น นายสมชาย ใจดี)"
+                        value={singleStudentInput.name}
+                        onChange={(e) => setSingleStudentInput(prev => ({ ...prev, name: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 rounded-2xl px-4 py-3 outline-none transition-all duration-200 font-bold text-slate-800 text-sm"
+                      />
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveIndividualStudent(true)}
+                        className="w-full sm:w-auto px-5 py-3 hover:bg-slate-50 text-indigo-600 border border-indigo-200 hover:border-indigo-300 rounded-2xl font-bold text-xs transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        บันทึกและเพิ่มคนถัดไป
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveIndividualStudent(false)}
+                        className="w-full sm:w-auto px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xs transition-all active:scale-95 cursor-pointer shadow-lg shadow-indigo-100 flex items-center justify-center gap-1.5"
+                      >
+                        <Check className="w-4 h-4" />
+                        บันทึกข้อมูลและปิดหน้าต่าง
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. EXCEL PASTE FORM */}
+                {addStudentTab === 'excel' && (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl">
+                      <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2 mb-1.5">
+                        <Info className="w-4 h-4 text-indigo-500 shrink-0" />
+                        รูปแบบข้อมูลที่รองรับ
+                      </h4>
+                      <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                        คุณสามารถคัดลอก (Copy) คอลัมน์จาก <span className="font-bold text-indigo-600">Microsoft Excel / Google Sheets</span> แล้ววางลงในช่องพิมพ์ด้านล่างได้ทันที ระบบจะทำการแปลงข้อมูลให้อัตโนมัติ
+                      </p>
+                      <div className="mt-3 bg-white p-3 rounded-xl border border-slate-100 font-mono text-[10px] text-slate-500 space-y-1">
+                        <p className="text-slate-400 border-b border-slate-50 pb-1 mb-1 font-bold">ตัวอย่างรูปแบบ (รองรับหลากหลายวิธี):</p>
+                        <p className="bg-slate-50/80 px-2 py-0.5 rounded text-indigo-600 font-medium">วิธีที่ 1 (แนะนำ): รหัส [เว้นวรรค/Tab] ชื่อ-นามสกุล</p>
+                        <p className="px-3 italic">66309010001    นายสมชาย ใจดี</p>
+                        <p className="px-3 italic">66309010002    นางสาวสมศรี ดีเลิศ</p>
+                        <p className="bg-slate-50/80 px-2 py-0.5 rounded text-indigo-600 font-medium mt-2">วิธีที่ 2: เฉพาะชื่ออย่างเดียว</p>
+                        <p className="px-3 italic">นายสมศักดิ์ มาดี</p>
+                        <p className="px-3 italic">นางสมร เจริญพร</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5 flex justify-between items-center">
+                        <span>พื้นที่วางข้อมูลรายชื่อ</span>
+                        <span className="text-[10px] font-medium text-slate-400">1 บรรทัดต่อ 1 คน</span>
+                      </label>
+                      <textarea
+                        rows={6}
+                        placeholder="วางข้อมูลที่นี่..."
+                        value={excelPasteInput}
+                        onChange={(e) => setExcelPasteInput(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 rounded-2xl px-4 py-3 outline-none transition-all duration-205 font-mono text-xs text-slate-800 placeholder:text-slate-350 leading-relaxed"
+                      />
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setExcelPasteInput('')}
+                        className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                      >
+                        ล้างข้อมูล
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleImportPastedText}
+                        className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xs transition-all active:scale-95 cursor-pointer shadow-lg shadow-indigo-100 flex items-center gap-1.5"
+                      >
+                        <Check className="w-4 h-4" />
+                        นำเข้าจำนวน {excelPasteInput.split('\n').filter(l => l.trim()).length} คน เข้าระบบ
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. CSV FILE UPLOAD */}
+                {addStudentTab === 'file' && (
+                  <div className="space-y-4">
+                    <div className="p-8 border-2 border-dashed border-slate-200 hover:border-indigo-300 rounded-[24px] bg-slate-50 hover:bg-indigo-50/20 transition-all text-center flex flex-col items-center justify-center relative cursor-pointer group">
+                      <input 
+                        type="file" 
+                        accept=".csv" 
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          
+                          const reader = new FileReader();
+                          reader.onload = async (event) => {
+                            const text = event.target?.result as string;
+                            const lines = text.split('\n');
+                            let count = 0;
+                            const batchPromises = [];
+                            
+                            for (let i = 1; i < lines.length; i++) {
+                              const line = lines[i].trim();
+                              if (!line) continue;
+                              const parts = line.split(',').map(p => p.trim());
+                              if (parts.length < 2) continue;
+                              
+                              let no = '';
+                              let studentId = '';
+                              let name = '';
+                              
+                              if (parts.length >= 3) {
+                                no = parts[0];
+                                studentId = parts[1];
+                                name = parts[2];
+                              } else {
+                                no = (students.length + count + 1).toString();
+                                studentId = parts[0];
+                                name = parts[1];
+                              }
+                              
+                              const id = crypto.randomUUID();
+                              const newStudent: Student = {
+                                id,
+                                no,
+                                studentId,
+                                name,
+                                courseKey: currentCourseKey,
+                                behavior: 0,
+                                attendance: 0,
+                                assignment1: { part1: 0, part2: 0, part3: 0 },
+                                assignment2: { part1: 0, part2: 0, part3: 0 },
+                                assignment3: { part1: 0, part2: 0, part3: 0 },
+                                midterm: 0,
+                                final: 0,
+                                isNewTransferred: singleStudentInput.isNewTransferred
+                              };
+                              batchPromises.push(setDoc(doc(db, 'students', id), newStudent));
+                              count++;
+                            }
+                            
+                            try {
+                              await Promise.all(batchPromises);
+                              showAlert('สำเร็จ!', `นำเข้าข้อมูลนักเรียน ${count} คน เรียบร้อยแล้ว`, 'success');
+                              setIsAddStudentModalOpen(false);
+                            } catch (err) {
+                              console.error(err);
+                              showAlert('ผิดพลาด', 'มีข้อผิดพลาดในการบันทึกข้อมูลเข้าระบบ', 'error');
+                            }
+                          };
+                          reader.readAsText(file);
+                        }} 
+                        className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+                      />
+                      <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-indigo-600 shadow-sm border border-slate-100 group-hover:scale-110 transition-all duration-300">
+                        <Upload className="w-8 h-8" />
+                      </div>
+                      <div className="mt-4 space-y-1">
+                        <p className="text-sm font-bold text-slate-700">คลิกที่นี่ หรือ ลากไฟล์เพื่ออัปโหลด</p>
+                        <p className="text-xs text-slate-400 font-medium">รองรับเฉพาะไฟล์ข้อมูลสกุล .CSV</p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl">
+                      <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2 mb-1.5">
+                        <Info className="w-4 h-4 text-amber-500 shrink-0" />
+                        คำแนะนำไฟล์ CSV
+                      </h4>
+                      <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                        โครงสร้างของไฟล์ควรเรียงลำดับคอลัมน์ดังนี้: <span className="font-bold text-indigo-600">เลขที่, รหัสประจำตัวประจำชั้น, ชื่อ-นามสกุล</span> (ไม่มีแถวหัวตาราง หรือมีแถวหัวตารางเป็นภาษาอังกฤษ)
+                      </p>
+                    </div>
+                  </div>
+                )}
+
               </div>
             </motion.div>
           </div>
