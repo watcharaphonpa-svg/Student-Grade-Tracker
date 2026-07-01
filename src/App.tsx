@@ -202,6 +202,94 @@ const studentCourseMatch = (itemCourseKey: string, studentCourseKey: string) => 
   return false;
 };
 
+// --- Local State Controlled Inputs for Performance ---
+interface EditableCellProps {
+  initialValue: string;
+  onCommit: (val: string) => void;
+  placeholder?: string;
+  className?: string;
+}
+
+function EditableCell({ initialValue, onCommit, placeholder, className }: EditableCellProps) {
+  const [value, setValue] = React.useState(initialValue);
+
+  React.useEffect(() => {
+    setValue(initialValue);
+  }, [initialValue]);
+
+  const handleBlur = () => {
+    if (value !== initialValue) {
+      onCommit(value);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur();
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      className={className}
+    />
+  );
+}
+
+interface EditableNumberCellProps {
+  initialValue: number;
+  onCommit: (val: number) => void;
+  max?: number;
+  min?: number;
+  className?: string;
+}
+
+function EditableNumberCell({ initialValue, onCommit, max, min = 0, className }: EditableNumberCellProps) {
+  const [value, setValue] = React.useState(initialValue !== undefined ? initialValue.toString() : '0');
+
+  React.useEffect(() => {
+    setValue(initialValue !== undefined ? initialValue.toString() : '0');
+  }, [initialValue]);
+
+  const handleBlur = () => {
+    const numVal = Number(value);
+    if (!isNaN(numVal) && numVal !== initialValue) {
+      let finalVal = numVal;
+      if (max !== undefined) finalVal = Math.min(max, finalVal);
+      finalVal = Math.max(min, finalVal);
+      onCommit(finalVal);
+      setValue(finalVal.toString());
+    } else {
+      setValue(initialValue !== undefined ? initialValue.toString() : '0');
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur();
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      max={max}
+      min={min}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      className={className}
+    />
+  );
+}
+
 export default function App() {
   const [appData, setAppData] = useState<AppData>({
     subjects: [],
@@ -1330,17 +1418,28 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans p-4 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-50/70 via-slate-50 to-slate-100/90 text-slate-900 font-sans p-4 md:p-8 relative overflow-hidden selection:bg-indigo-500 selection:text-white">
+      {/* Decorative premium background blobs */}
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-200/40 rounded-full blur-[100px] pointer-events-none -translate-y-1/2" />
+      <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-emerald-100/30 rounded-full blur-[100px] pointer-events-none" />
+      <div className="absolute bottom-10 left-10 w-[500px] h-[500px] bg-purple-100/20 rounded-full blur-[120px] pointer-events-none" />
+
+      <div className="max-w-7xl mx-auto space-y-6 relative z-10">
         
         {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <header className="backdrop-blur-md bg-white/60 border border-white/40 shadow-xl shadow-slate-100/50 rounded-[2.5rem] p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all duration-300">
           <div className="space-y-1">
-            <div className="flex items-center gap-3 text-indigo-600">
-              <GraduationCap className="w-10 h-10" />
-              <h1 className="text-3xl font-black tracking-tight text-slate-800">Student Tracker</h1>
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gradient-to-tr from-indigo-500 to-indigo-650 text-white rounded-2xl shadow-lg shadow-indigo-200">
+                <GraduationCap className="w-8 h-8" />
+              </div>
+              <div className="text-left">
+                <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-slate-800 via-indigo-950 to-slate-900 bg-clip-text text-transparent flex items-center gap-2 leading-none">
+                  Student Tracker <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-lg font-black uppercase tracking-wider shadow-inner">Pro</span>
+                </h1>
+                <p className="text-slate-400 font-bold text-xs mt-1">ระบบบันทึกและคำนวณคะแนนนักเรียนอัตโนมัติแบบเรียลไทม์</p>
+              </div>
             </div>
-            <p className="text-slate-500 font-medium">ระบบบันทึกและคำนวณคะแนนนักเรียนอัตโนมัติ</p>
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
@@ -1496,7 +1595,7 @@ export default function App() {
               className="flex flex-col xl:flex-row xl:items-center justify-between gap-6"
             >
               {/* Tab Navigation */}
-                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/60 shadow-sm overflow-x-auto no-scrollbar max-w-full">
+              <div className="flex items-center backdrop-blur-md bg-white/45 p-1.5 rounded-2xl border border-white/50 shadow-md shadow-slate-150/30 overflow-x-auto no-scrollbar max-w-full">
                 {[
                   { id: 'dashboard', label: 'หน้าแรก', icon: LayoutDashboard },
                   { id: 'grades', label: 'ตารางคะแนน', icon: Calculator },
@@ -1519,14 +1618,14 @@ export default function App() {
                     <button
                       key={tab.id}
                       onClick={handleClick}
-                      className={`relative flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap min-w-fit ${
-                        isActive ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-800'
+                      className={`relative flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-all text-sm whitespace-nowrap min-w-fit cursor-pointer ${
+                        isActive ? 'text-indigo-650' : 'text-slate-500 hover:text-slate-800 hover:bg-white/20'
                       }`}
                     >
                       {isActive && (
                         <motion.div
                           layoutId="activeTab"
-                          className="absolute inset-0 bg-white shadow-sm border border-slate-200/50 rounded-lg"
+                          className="absolute inset-0 bg-white shadow-md border border-white/60 rounded-xl"
                           transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                         />
                       )}
@@ -1553,26 +1652,28 @@ export default function App() {
               <motion.div 
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-slate-100 border border-slate-200/60 rounded-2xl px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-slate-700 shadow-sm"
+                className="backdrop-blur-md bg-white/50 border border-white/60 rounded-2xl px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-slate-700 shadow-md shadow-slate-100/30"
               >
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-white rounded-xl border border-slate-200/50 shadow-sm text-indigo-600">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-gradient-to-tr from-indigo-500 to-indigo-600 text-white rounded-xl shadow-md shadow-indigo-100">
                     <GraduationCap className="w-4 h-4" />
                   </div>
                   <div className="text-left">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block leading-none mb-0.5">กำลังจัดการรายวิชา</span>
-                    <span className="font-bold text-slate-800 text-sm">
-                      {appData.subjects.find(s => s.id === selectedSubjectId)?.name || 'ยังเลือกวิชาไม่ได้'}
-                    </span>
-                    <span className="mx-2 text-slate-350">|</span>
-                    <span className="text-slate-500 text-sm font-semibold">
-                      ห้อง {appData.classRooms.find(c => c.id === selectedClassId)?.name || 'ยังเลือกห้องไม่ได้'}
-                    </span>
+                    <span className="text-[9px] font-black uppercase tracking-wider text-indigo-500 block leading-none mb-1">กำลังจัดการรายวิชา</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-slate-800 text-base">
+                        {appData.subjects.find(s => s.id === selectedSubjectId)?.name || 'ยังเลือกวิชาไม่ได้'}
+                      </span>
+                      <span className="text-slate-300">|</span>
+                      <span className="text-indigo-600 text-sm font-black bg-indigo-50/60 px-2.5 py-0.5 rounded-lg border border-indigo-100/30">
+                        ห้อง {appData.classRooms.find(c => c.id === selectedClassId)?.name || 'ยังเลือกห้องไม่ได้'}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <button 
                   onClick={() => setTeacherTab('dashboard')}
-                  className="flex items-center gap-1.5 text-xs font-bold text-indigo-605 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer self-start sm:self-auto"
+                  className="flex items-center gap-1.5 text-xs font-black text-indigo-600 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200/80 px-4 py-2.5 rounded-xl shadow-sm hover:shadow transition-all active:scale-95 cursor-pointer self-start sm:self-auto"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5" />
                   เปลี่ยนรายวิชา / ห้องเรียน
@@ -1762,43 +1863,55 @@ export default function App() {
             {teacherTab === 'grades' && (
               <>
                 {/* Stats Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
+                  <motion.div 
+                    whileHover={{ y: -4, scale: 1.01 }}
+                    className="backdrop-blur-md bg-white/70 border border-white/60 p-6 rounded-[2rem] shadow-md shadow-slate-100/40 flex items-center gap-4 transition-all duration-300"
+                  >
+                    <div className="p-3.5 bg-indigo-50/70 text-indigo-600 rounded-2xl border border-indigo-100/20 shadow-inner">
                       <Users className="w-6 h-6" />
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-slate-500">นักเรียนทั้งหมด</p>
-                      <p className="text-2xl font-bold">{students.length} คน</p>
+                    <div className="text-left">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">นักเรียนทั้งหมด</p>
+                      <p className="text-3xl font-black text-slate-800 font-mono mt-0.5">{students.length} <span className="text-xs font-bold text-slate-400 font-sans">คน</span></p>
                     </div>
-                  </div>
-                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-                    <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
+                  </motion.div>
+                  <motion.div 
+                    whileHover={{ y: -4, scale: 1.01 }}
+                    className="backdrop-blur-md bg-white/70 border border-white/60 p-6 rounded-[2rem] shadow-md shadow-slate-100/40 flex items-center gap-4 transition-all duration-300"
+                  >
+                    <div className="p-3.5 bg-rose-50/70 text-rose-600 rounded-2xl border border-rose-100/20 shadow-inner">
                       <UserPlus className="w-6 h-6" />
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-slate-500">ย้ายเข้าใหม่</p>
-                      <p className="text-2xl font-bold">{students.filter(s => s.isNewTransferred).length} คน</p>
+                    <div className="text-left">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">ย้ายเข้าใหม่</p>
+                      <p className="text-3xl font-black text-slate-800 font-mono mt-0.5">{students.filter(s => s.isNewTransferred).length} <span className="text-xs font-bold text-slate-400 font-sans">คน</span></p>
                     </div>
-                  </div>
-                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                  </motion.div>
+                  <motion.div 
+                    whileHover={{ y: -4, scale: 1.01 }}
+                    className="backdrop-blur-md bg-white/70 border border-white/60 p-6 rounded-[2rem] shadow-md shadow-slate-100/40 flex items-center gap-4 transition-all duration-300"
+                  >
+                    <div className="p-3.5 bg-emerald-50/70 text-emerald-600 rounded-2xl border border-emerald-100/20 shadow-inner">
                       <Calculator className="w-6 h-6" />
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-slate-500">คะแนนเฉลี่ย</p>
-                      <p className="text-2xl font-bold">{stats.avg} / 100</p>
+                    <div className="text-left">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">คะแนนเฉลี่ย</p>
+                      <p className="text-3xl font-black text-slate-800 font-mono mt-0.5">{stats.avg} <span className="text-xs font-bold text-slate-400 font-sans">/ 100</span></p>
                     </div>
-                  </div>
-                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-                    <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
+                  </motion.div>
+                  <motion.div 
+                    whileHover={{ y: -4, scale: 1.01 }}
+                    className="backdrop-blur-md bg-white/70 border border-white/60 p-6 rounded-[2rem] shadow-md shadow-slate-100/40 flex items-center gap-4 transition-all duration-300"
+                  >
+                    <div className="p-3.5 bg-amber-50/70 text-amber-600 rounded-2xl border border-amber-100/20 shadow-inner">
                       <Info className="w-6 h-6" />
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-slate-500">อัตราการผ่าน</p>
-                      <p className="text-2xl font-bold">{stats.passRate}%</p>
+                    <div className="text-left">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">อัตราการผ่าน</p>
+                      <p className="text-3xl font-black text-slate-800 font-mono mt-0.5">{stats.passRate}%</p>
                     </div>
-                  </div>
+                  </motion.div>
                 </div>
 
                 {/* Filter and Title Row */}
@@ -1877,29 +1990,26 @@ export default function App() {
                                   className="hover:bg-slate-50/30 transition-colors group"
                                 >
                                   <td className="p-2">
-                                    <input 
-                                      type="text" 
-                                      value={student.no}
-                                      onChange={(e) => updateStudent(student.id, 'no', e.target.value)}
+                                    <EditableCell 
+                                      initialValue={student.no}
+                                      onCommit={(val) => updateStudent(student.id, 'no', val)}
                                       className="w-12 mx-auto bg-transparent border border-transparent hover:border-slate-200 focus:bg-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg py-1 text-center outline-none transition-all duration-200 text-slate-600 font-bold"
                                     />
                                   </td>
                                   <td className="p-2">
-                                    <input 
-                                      type="text" 
+                                    <EditableCell 
+                                      initialValue={student.studentId}
+                                      onCommit={(val) => updateStudent(student.id, 'studentId', val)}
                                       placeholder="รหัส..."
-                                      value={student.studentId}
-                                      onChange={(e) => updateStudent(student.id, 'studentId', e.target.value)}
                                       className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-2 py-1 outline-none transition-all duration-200 text-slate-600 font-mono font-medium text-sm"
                                     />
                                   </td>
                                   <td className="p-2">
                                     <div className="flex items-center gap-2 group/name-container">
-                                      <input 
-                                        type="text" 
+                                      <EditableCell 
+                                        initialValue={student.name}
+                                        onCommit={(val) => updateStudent(student.id, 'name', val)}
                                         placeholder="ชื่อ-นามสกุล..."
-                                        value={student.name}
-                                        onChange={(e) => updateStudent(student.id, 'name', e.target.value)}
                                         className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-indigo-50/40 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-3 py-1.5 outline-none transition-all duration-200 font-bold text-slate-800"
                                       />
                                       <button
@@ -1917,20 +2027,18 @@ export default function App() {
                                     </div>
                                   </td>
                                   <td className="p-2 text-center">
-                                    <input 
-                                      type="number" 
-                                      value={student.behavior}
+                                    <EditableNumberCell 
+                                      initialValue={student.behavior}
+                                      onCommit={(val) => updateStudent(student.id, 'behavior', val)}
                                       max={10}
-                                      onChange={(e) => updateStudent(student.id, 'behavior', e.target.value)}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
                                     />
                                   </td>
                                   <td className="p-2 text-center">
-                                    <input 
-                                      type="number" 
-                                      value={student.attendance}
+                                    <EditableNumberCell 
+                                      initialValue={student.attendance}
+                                      onCommit={(val) => updateStudent(student.id, 'attendance', val)}
                                       max={10}
-                                      onChange={(e) => updateStudent(student.id, 'attendance', e.target.value)}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
                                     />
                                   </td>
@@ -1948,20 +2056,18 @@ export default function App() {
                                     </button>
                                   </td>
                                   <td className="p-2 text-center">
-                                    <input 
-                                      type="number" 
-                                      value={student.midterm}
+                                    <EditableNumberCell 
+                                      initialValue={student.midterm}
+                                      onCommit={(val) => updateStudent(student.id, 'midterm', val)}
                                       max={15}
-                                      onChange={(e) => updateStudent(student.id, 'midterm', e.target.value)}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
                                     />
                                   </td>
                                   <td className="p-2 text-center">
-                                    <input 
-                                      type="number" 
-                                      value={student.final}
+                                    <EditableNumberCell 
+                                      initialValue={student.final}
+                                      onCommit={(val) => updateStudent(student.id, 'final', val)}
                                       max={20}
-                                      onChange={(e) => updateStudent(student.id, 'final', e.target.value)}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
                                     />
                                   </td>
@@ -1991,7 +2097,7 @@ export default function App() {
                                     </button>
                                   </td>
                                 </motion.tr>
-
+                                
                                 {/* Expanded Sub-scores */}
                                 <AnimatePresence>
                                   {isExp && (
@@ -2020,11 +2126,10 @@ export default function App() {
                                                   {['part1', 'part2', 'part3'].map((part, idx) => (
                                                     <div key={part} className="space-y-1">
                                                       <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">แบบฝึกหัดที่ {(num - 1) * 3 + (idx + 1)}</label>
-                                                      <input 
-                                                        type="number"
+                                                      <EditableNumberCell 
+                                                        initialValue={score[part as keyof SubScores] || 0}
+                                                        onCommit={(val) => updateStudent(student.id, `${key}.${part}`, val)}
                                                         max={5}
-                                                        value={score[part as keyof SubScores] || 0}
-                                                        onChange={(e) => updateStudent(student.id, `${key}.${part}`, e.target.value)}
                                                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-center text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                                                       />
                                                     </div>
