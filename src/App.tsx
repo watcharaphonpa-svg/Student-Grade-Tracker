@@ -14,7 +14,7 @@ import html2canvas from 'html2canvas';
 
 import { 
   collection, onSnapshot, doc, setDoc, updateDoc, 
-  deleteDoc, query, where, getDocs, getDoc
+  deleteDoc, query, where, getDocs, getDoc, writeBatch
 } from 'firebase/firestore';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { db, auth, signInWithGoogle } from './lib/firebase';
@@ -623,9 +623,20 @@ export default function App() {
     }
   }, []);
 
-  const [teacherTab, setTeacherTab] = useState<'dashboard' | 'grades' | 'assignments' | 'submissions' | 'attendance' | 'materials'>('dashboard');
+  const [teacherTab, setTeacherTab] = useState<'dashboard' | 'grades' | 'assignments' | 'submissions' | 'attendance' | 'materials' | 'admin'>('dashboard');
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [currentAttendance, setCurrentAttendance] = useState<Record<string, 'present' | 'late' | 'absent' | 'leave'>>({});
+
+  // Database Admin Console States & Variables
+  const [migrationSrcSubject, setMigrationSrcSubject] = useState('');
+  const [migrationSrcClass, setMigrationSrcClass] = useState('');
+  const [migrationDstSubject, setMigrationDstSubject] = useState('');
+  const [migrationDstClass, setMigrationDstClass] = useState('');
+  const [isAdminProcessing, setIsAdminProcessing] = useState(false);
+  const [allSubmissionsCount, setAllSubmissionsCount] = useState(0);
+  const [allAttendanceCount, setAllAttendanceCount] = useState(0);
+  const [allStudentsCount, setAllStudentsCount] = useState(0);
+  const [isBackupRestoring, setIsBackupRestoring] = useState(false);
 
   // Student Portal State
   const [searchId, setSearchId] = useState('');
@@ -799,6 +810,268 @@ export default function App() {
       type: 'danger',
       onConfirm: async () => {
         await deleteDoc(doc(db, 'teacherNotes', id));
+      }
+    });
+  };
+
+  // Database Admin Diagnostics & Stats Loader
+  const fetchAdminStats = async () => {
+    try {
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      const submissionsSnap = await getDocs(collection(db, 'submissions'));
+      const attendanceSnap = await getDocs(collection(db, 'attendance'));
+      setAllStudentsCount(studentsSnap.size);
+      setAllSubmissionsCount(submissionsSnap.size);
+      setAllAttendanceCount(attendanceSnap.size);
+    } catch (err) {
+      console.error("Failed to fetch admin stats:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (teacherTab === 'admin') {
+      fetchAdminStats();
+    }
+  }, [teacherTab]);
+
+  const exportDatabaseJson = async () => {
+    setIsAdminProcessing(true);
+    try {
+      const subjectsSnap = await getDocs(collection(db, 'subjects'));
+      const classRoomsSnap = await getDocs(collection(db, 'classRooms'));
+      const assignmentsSnap = await getDocs(collection(db, 'assignments'));
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      const submissionsSnap = await getDocs(collection(db, 'submissions'));
+      const attendanceSnap = await getDocs(collection(db, 'attendance'));
+      const materialsSnap = await getDocs(collection(db, 'materials'));
+
+      const dbBackup = {
+        subjects: subjectsSnap.docs.map(d => d.data()),
+        classRooms: classRoomsSnap.docs.map(d => d.data()),
+        assignments: assignmentsSnap.docs.map(d => d.data()),
+        students: studentsSnap.docs.map(d => d.data()),
+        submissions: submissionsSnap.docs.map(d => d.data()),
+        attendance: attendanceSnap.docs.map(d => d.data()),
+        materials: materialsSnap.docs.map(d => d.data()),
+        version: "1.0",
+        exportedAt: new Date().toISOString()
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dbBackup, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `student_tracker_backup_${Date.now()}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      
+      showAlert('สำเร็จ!', 'ส่งออกไฟล์สำรองข้อมูลฐานข้อมูลเรียบร้อยแล้ว', 'success');
+    } catch (err: any) {
+      console.error(err);
+      showAlert('ล้มเหลว', `เกิดข้อผิดพลาดในการส่งออกข้อมูล: ${err.message}`, 'error');
+    } finally {
+      setIsAdminProcessing(false);
+    }
+  };
+
+  const importDatabaseJson = async (file: File) => {
+    setIsBackupRestoring(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const backup = JSON.parse(event.target?.result as string);
+        if (!backup.subjects || !backup.students || !backup.classRooms) {
+          throw new Error("รูปแบบไฟล์สำรองข้อมูลไม่ถูกต้อง");
+        }
+
+        const collectionsToRestore = [
+          { name: 'subjects', data: backup.subjects },
+          { name: 'classRooms', data: backup.classRooms },
+          { name: 'assignments', data: backup.assignments || [] },
+          { name: 'students', data: backup.students },
+          { name: 'submissions', data: backup.submissions || [] },
+          { name: 'attendance', data: backup.attendance || [] },
+          { name: 'materials', data: backup.materials || [] }
+        ];
+
+        let totalCount = 0;
+        let currentBatch = writeBatch(db);
+        let batchOpCount = 0;
+
+        for (const col of collectionsToRestore) {
+          for (const item of col.data) {
+            if (!item.id) continue;
+            const docRef = doc(db, col.name, item.id);
+            currentBatch.set(docRef, item);
+            batchOpCount++;
+            totalCount++;
+
+            if (batchOpCount >= 400) {
+              await currentBatch.commit();
+              currentBatch = writeBatch(db);
+              batchOpCount = 0;
+            }
+          }
+        }
+
+        if (batchOpCount > 0) {
+          await currentBatch.commit();
+        }
+
+        showAlert('สำเร็จ!', `กู้คืนข้อมูลฐานข้อมูลสำเร็จ ทั้งหมด ${totalCount} รายการ`, 'success');
+        fetchAdminStats();
+      } catch (err: any) {
+        console.error(err);
+        showAlert('ล้มเหลว', `เกิดข้อผิดพลาดในการนำเข้าข้อมูล: ${err.message}`, 'error');
+      } finally {
+        setIsBackupRestoring(false);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleMigrateStudents = async (mode: 'move' | 'copy') => {
+    if (!migrationSrcSubject || !migrationSrcClass || !migrationDstSubject || !migrationDstClass) {
+      showAlert('ข้อมูลไม่ครบถ้วน', 'กรุณาเลือกวิชาและห้องเรียนต้นทางและปลายทางให้ครบถ้วน', 'warning');
+      return;
+    }
+
+    const srcKey = `${migrationSrcSubject}-${migrationSrcClass}`;
+    const dstKey = `${migrationDstSubject}-${migrationDstClass}`;
+
+    if (srcKey === dstKey) {
+      showAlert('เกิดข้อผิดพลาด', 'ต้นทางและปลายทางต้องไม่เป็นห้องเดียวกัน', 'warning');
+      return;
+    }
+
+    setIsAdminProcessing(true);
+    try {
+      const q = query(collection(db, 'students'), where('courseKey', '==', srcKey));
+      const snap = await getDocs(q);
+      const srcStudents = snap.docs.map(d => d.data() as Student);
+
+      if (srcStudents.length === 0) {
+        showAlert('ไม่พบข้อมูล', 'ไม่พบรายชื่อนักเรียนในห้องเรียนต้นทาง', 'info');
+        setIsAdminProcessing(false);
+        return;
+      }
+
+      let batch = writeBatch(db);
+      let count = 0;
+
+      if (mode === 'move') {
+        for (const s of srcStudents) {
+          const sRef = doc(db, 'students', s.id);
+          batch.update(sRef, { courseKey: dstKey });
+          count++;
+
+          const attQuery = query(collection(db, 'attendance'), where('studentId', '==', s.studentId), where('courseKey', '==', srcKey));
+          const attSnap = await getDocs(attQuery);
+          attSnap.docs.forEach(doc => {
+            batch.update(doc.ref, { courseKey: dstKey });
+          });
+        }
+      } else {
+        for (const s of srcStudents) {
+          const newId = crypto.randomUUID();
+          const newStudent: Student = {
+            ...s,
+            id: newId,
+            courseKey: dstKey,
+            behavior: 0,
+            attendance: 0,
+            assignment1: { part1: 0, part2: 0, part3: 0 },
+            assignment2: { part1: 0, part2: 0, part3: 0 },
+            assignment3: { part1: 0, part2: 0, part3: 0 },
+            midterm: 0,
+            final: 0
+          };
+          const sRef = doc(db, 'students', newId);
+          batch.set(sRef, newStudent);
+          count++;
+        }
+      }
+
+      await batch.commit();
+      showAlert('สำเร็จ!', `${mode === 'move' ? 'ย้าย' : 'คัดลอก'} รายชื่อนักเรียนเรียบร้อยแล้ว จำนวน ${count} คน`, 'success');
+      
+      setMigrationSrcSubject('');
+      setMigrationSrcClass('');
+      setMigrationDstSubject('');
+      setMigrationDstClass('');
+      fetchAdminStats();
+    } catch (err: any) {
+      console.error(err);
+      showAlert('ล้มเหลว', `เกิดข้อผิดพลาดในการจัดการข้อมูล: ${err.message}`, 'error');
+    } finally {
+      setIsAdminProcessing(false);
+    }
+  };
+
+  const handlePurgeData = async (type: 'attendance' | 'submissions' | 'students') => {
+    if (!selectedSubjectId || !selectedClassId) {
+      showAlert('ข้อผิดพลาด', 'กรุณาเลือกวิชาและห้องเรียนที่ต้องการล้างข้อมูล', 'warning');
+      return;
+    }
+
+    const targetKey = `${selectedSubjectId}-${selectedClassId}`;
+    const subjectName = appData.subjects.find(s => s.id === selectedSubjectId)?.name || '';
+    const className = appData.classRooms.find(c => c.id === selectedClassId)?.name || '';
+
+    let typeText = '';
+    if (type === 'attendance') typeText = 'ประวัติการเข้าเรียนทั้งหมด';
+    else if (type === 'submissions') typeText = 'ประวัติการส่งงานออนไลน์ทั้งหมด';
+    else if (type === 'students') typeText = 'รายชื่อนักเรียนและเกรดทั้งหมด';
+
+    askConfirmation({
+      title: `ล้างข้อมูล ${typeText}`,
+      message: `คุณกำลังจะลบข้อมูล "${typeText}" ในรายวิชา "${subjectName} (${className})" การดำเนินการนี้ลบข้อมูลถาวรบนเซิร์ฟเวอร์และกู้คืนไม่ได้ ยืนยันหรือไม่?`,
+      type: 'danger',
+      onConfirm: async () => {
+        setIsAdminProcessing(true);
+        try {
+          let count = 0;
+          let batch = writeBatch(db);
+
+          if (type === 'attendance') {
+            const q = query(collection(db, 'attendance'), where('courseKey', '==', targetKey));
+            const snap = await getDocs(q);
+            snap.docs.forEach(doc => {
+              batch.delete(doc.ref);
+              count++;
+            });
+          } else if (type === 'submissions') {
+            const assignmentsInCourse = appData.assignments.filter(a => a.courseKey === targetKey);
+            for (const a of assignmentsInCourse) {
+              const q = query(collection(db, 'submissions'), where('assignmentId', '==', a.id));
+              const snap = await getDocs(q);
+              snap.docs.forEach(doc => {
+                batch.delete(doc.ref);
+                count++;
+              });
+            }
+          } else if (type === 'students') {
+            const q = query(collection(db, 'students'), where('courseKey', '==', targetKey));
+            const snap = await getDocs(q);
+            snap.docs.forEach(doc => {
+              batch.delete(doc.ref);
+              count++;
+            });
+          }
+
+          if (count > 0) {
+            await batch.commit();
+            showAlert('สำเร็จ!', `ล้างข้อมูล ${typeText} เรียบร้อยแล้ว จำนวน ${count} รายการ`, 'success');
+          } else {
+            showAlert('ไม่พบข้อมูล', `ไม่มีข้อมูล ${typeText} ในห้องนี้ให้ลบ`, 'info');
+          }
+          fetchAdminStats();
+        } catch (err: any) {
+          console.error(err);
+          showAlert('ล้มเหลว', `เกิดข้อผิดพลาดในการล้างข้อมูล: ${err.message}`, 'error');
+        } finally {
+          setIsAdminProcessing(false);
+        }
       }
     });
   };
@@ -1603,6 +1876,7 @@ export default function App() {
                   { id: 'submissions', label: 'ตรวจงาน', icon: Monitor },
                   { id: 'materials', label: 'สื่อการสอน', icon: Link },
                   { id: 'attendance', label: 'เช็คชื่อ', icon: CheckCircle2 },
+                  ...(user ? [{ id: 'admin', label: 'ระบบหลังบ้าน', icon: Settings }] : [])
                 ].map((tab) => {
                   const Icon = tab.icon;
                   const isActive = teacherTab === tab.id;
@@ -2815,6 +3089,237 @@ export default function App() {
                     </div>
                   </motion.div>
                 </div>
+              </div>
+            )}
+
+            {teacherTab === 'admin' && (
+              /* Database Admin Console View */
+              <div className="max-w-5xl mx-auto space-y-8">
+                {/* Diagnostics and counts */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
+                  <div className="backdrop-blur-md bg-white/70 border border-white/60 p-6 rounded-[2rem] shadow-md shadow-slate-100/40 text-left">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">สถานะการเชื่อมต่อ</p>
+                    <p className="text-xl font-black text-emerald-600 mt-2 flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                      เชื่อมต่อสำเร็จ
+                    </p>
+                  </div>
+                  <div className="backdrop-blur-md bg-white/70 border border-white/60 p-6 rounded-[2rem] shadow-md shadow-slate-100/40 text-left">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">นักเรียนรวม</p>
+                    <p className="text-3xl font-black text-slate-800 font-mono mt-1">{allStudentsCount} คน</p>
+                  </div>
+                  <div className="backdrop-blur-md bg-white/70 border border-white/60 p-6 rounded-[2rem] shadow-md shadow-slate-100/40 text-left">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 font-bold">การเช็คชื่อสะสม</p>
+                    <p className="text-3xl font-black text-slate-800 font-mono mt-1">{allAttendanceCount} รายการ</p>
+                  </div>
+                  <div className="backdrop-blur-md bg-white/70 border border-white/60 p-6 rounded-[2rem] shadow-md shadow-slate-100/40 text-left">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">การส่งงานออนไลน์</p>
+                    <p className="text-3xl font-black text-slate-800 font-mono mt-1">{allSubmissionsCount} รายการ</p>
+                  </div>
+                </div>
+
+                {/* Database Actions */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Backup and Restore panel */}
+                  <motion.div 
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="backdrop-blur-md bg-white/70 border border-white/60 p-8 rounded-[2.5rem] shadow-xl shadow-slate-100/50 space-y-6 text-left"
+                  >
+                    <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                      <div className="p-3 bg-indigo-50 text-indigo-650 rounded-2xl">
+                        <Cloud className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-black text-slate-800">สำรองและกู้คืนฐานข้อมูล</h3>
+                        <p className="text-slate-400 text-xs mt-0.5">ส่งออกและนำเข้าข้อมูล JSON ทั้งระบบ</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <button
+                          onClick={exportDatabaseJson}
+                          disabled={isAdminProcessing}
+                          className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-4 rounded-2xl font-bold transition-all active:scale-[0.98] cursor-pointer shadow-md shadow-indigo-100 text-sm"
+                        >
+                          <Download className="w-5 h-5" />
+                          ส่งออกข้อมูลฐานข้อมูลทั้งหมด (Export JSON)
+                        </button>
+                        <p className="text-[10px] text-slate-400 text-center mt-2">
+                          * ข้อมูลจะถูกแปลงเป็นโครงสร้าง JSON และดาวน์โหลดลงคอมพิวเตอร์ของคุณ
+                        </p>
+                      </div>
+
+                      <div className="border-t border-slate-100 pt-6">
+                        <label className={`w-full flex items-center justify-center gap-2 border-2 border-dashed rounded-2xl py-6 text-center cursor-pointer transition-all ${
+                          isBackupRestoring 
+                            ? 'bg-slate-50 border-slate-200 text-slate-400' 
+                            : 'bg-slate-50/50 hover:bg-slate-50 border-slate-200 hover:border-indigo-400 text-slate-650'
+                        }`}>
+                          {isBackupRestoring ? (
+                            <>
+                              <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+                              <span className="font-bold text-sm">กำลังนำเข้าและกู้คืนข้อมูล...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-5 h-5 text-slate-400" />
+                              <div className="flex flex-col text-left">
+                                <span className="font-bold text-sm text-slate-700">นำเข้าไฟล์เพื่อกู้คืนระบบ (Import JSON)</span>
+                                <span className="text-[10px] text-slate-400 mt-0.5">คลิกเพื่อเลือกไฟล์สำรองข้อมูลนามสกุล .json</span>
+                              </div>
+                            </>
+                          )}
+                          <input 
+                            type="file" 
+                            accept=".json"
+                            disabled={isBackupRestoring}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) importDatabaseJson(file);
+                              e.target.value = '';
+                            }} 
+                            className="hidden" 
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* Student migration / Copying */}
+                  <motion.div 
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="backdrop-blur-md bg-white/70 border border-white/60 p-8 rounded-[2.5rem] shadow-xl shadow-slate-100/50 space-y-6 text-left"
+                  >
+                    <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                      <div className="p-3 bg-emerald-50/80 text-emerald-600 rounded-2xl">
+                        <Users className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-black text-slate-800">ย้าย/คัดลอกรายชื่อนักเรียน</h3>
+                        <p className="text-slate-400 text-xs mt-0.5">จัดการโอนย้ายนักเรียนข้ามวิชาเรียนหรือห้องเรียน</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-slate-500 uppercase tracking-wider">ห้องเรียนต้นทาง</label>
+                          <select 
+                            value={migrationSrcSubject}
+                            onChange={(e) => setMigrationSrcSubject(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                          >
+                            <option value="">เลือกวิชาต้นทาง...</option>
+                            {appData.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
+                          <select 
+                            value={migrationSrcClass}
+                            onChange={(e) => setMigrationSrcClass(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-medium mt-1.5"
+                          >
+                            <option value="">เลือกห้องต้นทาง...</option>
+                            {appData.classRooms.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-slate-500 uppercase tracking-wider">ห้องเรียนปลายทาง</label>
+                          <select 
+                            value={migrationDstSubject}
+                            onChange={(e) => setMigrationDstSubject(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                          >
+                            <option value="">เลือกวิชาปลายทาง...</option>
+                            {appData.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
+                          <select 
+                            value={migrationDstClass}
+                            onChange={(e) => setMigrationDstClass(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-medium mt-1.5"
+                          >
+                            <option value="">เลือกห้องปลายทาง...</option>
+                            {appData.classRooms.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 pt-2">
+                        <button
+                          onClick={() => handleMigrateStudents('move')}
+                          disabled={isAdminProcessing}
+                          className="flex items-center justify-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-650 py-3.5 rounded-2xl font-bold text-xs transition-all active:scale-[0.98] border border-indigo-100/50 cursor-pointer"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                          ย้ายเด็ก (Move)
+                        </button>
+                        <button
+                          onClick={() => handleMigrateStudents('copy')}
+                          disabled={isAdminProcessing}
+                          className="flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-650 py-3.5 rounded-2xl font-bold text-xs transition-all active:scale-[0.98] border border-emerald-100/50 cursor-pointer"
+                        >
+                          <Users className="w-4 h-4" />
+                          คัดลอกเด็ก (Copy)
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+
+                {/* Database Cleansing */}
+                <motion.div 
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="backdrop-blur-md bg-white/70 border border-white/60 p-8 rounded-[2.5rem] shadow-xl shadow-slate-100/50 space-y-6 text-left"
+                >
+                  <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                    <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl">
+                      <Trash2 className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black text-slate-800">ล้างประวัติ/ลบข้อมูลรายห้อง</h3>
+                      <p className="text-slate-400 text-xs mt-0.5">เคลียร์ข้อมูลในวิชาที่กำลังเลือกอยู่ เพื่อเตรียมระบบขึ้นเทอมใหม่</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-rose-50/40 border border-rose-100/40 rounded-2xl">
+                    <div className="text-left">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-rose-550 block">ห้องเรียนที่เลือกสำหรับการลบ</span>
+                      <span className="font-extrabold text-slate-800 text-sm">
+                        {appData.subjects.find(s => s.id === selectedSubjectId)?.name || 'ยังไม่ได้เลือกวิชา'} - ห้อง {appData.classRooms.find(c => c.id === selectedClassId)?.name || 'ยังไม่ได้เลือกห้อง'}
+                      </span>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={() => handlePurgeData('attendance')}
+                        disabled={isAdminProcessing}
+                        className="flex items-center gap-1 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-700 hover:text-rose-600 px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 text-slate-400 hover:text-rose-500" />
+                        ล้างการเช็คชื่อ
+                      </button>
+                      <button
+                        onClick={() => handlePurgeData('submissions')}
+                        disabled={isAdminProcessing}
+                        className="flex items-center gap-1 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-700 hover:text-rose-600 px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-slate-400 hover:text-rose-500" />
+                        ล้างการส่งงาน
+                      </button>
+                      <button
+                        onClick={() => handlePurgeData('students')}
+                        disabled={isAdminProcessing}
+                        className="flex items-center gap-1 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-700 hover:text-rose-600 px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-slate-400 hover:text-rose-500" />
+                        ลบรายชื่อนักเรียนทั้งหมด
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
               </div>
             )}
           </>
