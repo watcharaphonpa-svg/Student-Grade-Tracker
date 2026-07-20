@@ -3464,33 +3464,7 @@ export default function App() {
                 </button>
               </form>
 
-              {/* Quick student selection badges for demo and testing convenience */}
-              {Object.keys(appData.courses || {}).some(key => (appData.courses || {})[key]?.length > 0) && (
-                <div className="text-left font-sans text-xs pt-2">
-                  <span className="text-slate-400 font-extrabold mr-2 uppercase tracking-wide">ค้นหาด่วนจากรายชื่อนักเรียน:</span>
-                  <div className="flex flex-wrap gap-2 mt-2 max-h-24 overflow-y-auto no-scrollbar pr-1">
-                    {Object.keys(appData.courses || {})
-                      .flatMap(key => (appData.courses || {})[key] || [])
-                      .filter((value, index, self) => self.findIndex(t => t.studentId === value.studentId) === index) // Unique by studentId
-                      .slice(0, 8)
-                      .map(st => (
-                        <button
-                          key={st.id}
-                          type="button"
-                          onClick={() => {
-                            setSearchId(st.studentId);
-                            setFoundStudent(st);
-                            setHasSearched(true);
-                          }}
-                          className="bg-slate-50 hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-250 text-slate-600 hover:text-indigo-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1 shadow-2xs"
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${st.isNewTransferred ? 'bg-rose-450 animate-pulse' : 'bg-slate-300'}`} />
-                          {st.name} ({st.studentId}){st.isNewTransferred && <span className="text-[9px] text-rose-550 font-black ml-0.5 bg-rose-50 px-1 rounded-sm">ย้ายเข้า</span>}
-                        </button>
-                      ))}
-                  </div>
-                </div>
-              )}
+
             </motion.div>
 
             <AnimatePresence mode="wait">
