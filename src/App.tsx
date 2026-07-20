@@ -498,6 +498,7 @@ export default function App() {
   const [isLockedStudentView, setIsLockedStudentView] = useState(false);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isTabsCollapsed, setIsTabsCollapsed] = useState(false);
 
   // Materials Form States
   const [newMaterialTitle, setNewMaterialTitle] = useState('');
@@ -1560,25 +1561,40 @@ export default function App() {
     const targetPart = assignment.targetPart || 1;
 
     // 4. Update the student's manual field matching studentId AND courseKey (using fallback helper)
-    // Find all student records to perform space/case insensitive matching of student ID
-    const snap = await getDocs(collection(db, 'students'));
+    // Find matching student from local appData.courses cache to get their document ID (extremely fast & no reads!)
     const cleanSubStudentId = (submission.studentId || '').trim().toLowerCase();
-    
-    // Find student document matching both studentId (space/case-insensitive) and courseKey
-    const studentDoc = snap.docs.find(doc => {
-      const studentData = doc.data() as Student;
-      return (studentData.studentId || '').trim().toLowerCase() === cleanSubStudentId &&
-             studentCourseMatch(assignment.courseKey, studentData.courseKey);
-    }) || snap.docs.find(doc => {
-      // Fallback: match by studentId (space/case-insensitive) only
-      const studentData = doc.data() as Student;
-      return (studentData.studentId || '').trim().toLowerCase() === cleanSubStudentId;
-    });
-    
-    if (studentDoc) {
-      const studentData = studentDoc.data() as Student;
+    let matchedStudent: Student | null = null;
+
+    // Try finding student matching studentId and courseKey
+    for (const key in (appData.courses || {})) {
+      if (studentCourseMatch(assignment.courseKey, key)) {
+        const found = (appData.courses[key] || []).find(
+          s => (s.studentId || '').trim().toLowerCase() === cleanSubStudentId
+        );
+        if (found) {
+          matchedStudent = found;
+          break;
+        }
+      }
+    }
+
+    // Fallback: search anywhere in our courses cache
+    if (!matchedStudent) {
+      for (const key in (appData.courses || {})) {
+        const found = (appData.courses[key] || []).find(
+          s => (s.studentId || '').trim().toLowerCase() === cleanSubStudentId
+        );
+        if (found) {
+          matchedStudent = found;
+          break;
+        }
+      }
+    }
+
+    if (matchedStudent) {
+      const studentRef = doc(db, 'students', matchedStudent.id);
       const assignmentKey = `assignment${targetAssignment}` as keyof Student;
-      const currentAssignment = (studentData[assignmentKey] || { part1: 0, part2: 0, part3: 0 }) as SubScores;
+      const currentAssignment = (matchedStudent[assignmentKey] || { part1: 0, part2: 0, part3: 0 }) as SubScores;
       const partKey = `part${targetPart}`;
       
       const updatedAssignment = {
@@ -1586,13 +1602,34 @@ export default function App() {
         [partKey]: score
       };
 
-      await updateDoc(studentDoc.ref, {
+      await updateDoc(studentRef, {
         [assignmentKey]: updatedAssignment
       });
 
       console.log(`Successfully mapped score ${score} to student ${submission.studentId} field ${assignmentKey}.${partKey}`);
     } else {
-      console.warn(`Could not find student matching studentId: "${submission.studentId}"`);
+      // Final fallback: do a highly targeted query (only 1 read) rather than getDocs of entire table
+      const q = query(collection(db, 'students'), where('studentId', '==', submission.studentId));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const studentDoc = snap.docs[0];
+        const studentData = studentDoc.data() as Student;
+        const assignmentKey = `assignment${targetAssignment}` as keyof Student;
+        const currentAssignment = (studentData[assignmentKey] || { part1: 0, part2: 0, part3: 0 }) as SubScores;
+        const partKey = `part${targetPart}`;
+        
+        const updatedAssignment = {
+          ...currentAssignment,
+          [partKey]: score
+        };
+
+        await updateDoc(studentDoc.ref, {
+          [assignmentKey]: updatedAssignment
+        });
+        console.log(`Successfully mapped score ${score} (via targeted query fallback) to student ${submission.studentId}`);
+      } else {
+        console.warn(`Could not find student matching studentId: "${submission.studentId}"`);
+      }
     }
   };
 
@@ -1700,7 +1737,7 @@ export default function App() {
       <div className="max-w-7xl mx-auto space-y-6 relative z-10">
         
         {/* Header */}
-        <header className="relative z-40 backdrop-blur-md bg-white/60 border border-white/40 shadow-xl shadow-slate-100/50 rounded-[2.5rem] p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all duration-300">
+        <header className="relative z-50 backdrop-blur-md bg-white/60 border border-white/40 shadow-xl shadow-slate-100/50 rounded-[2.5rem] p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all duration-300">
           <div className="space-y-1">
             <div className="flex items-center gap-4">
               <div className="p-3 bg-gradient-to-tr from-indigo-500 to-indigo-650 text-white rounded-2xl shadow-lg shadow-indigo-200">
@@ -1861,64 +1898,123 @@ export default function App() {
         </header>
 
         {view === 'teacher' && (
-          <div className="space-y-6">
+          <div className="space-y-6 relative z-10">
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className="flex flex-col xl:flex-row xl:items-center justify-between gap-6"
             >
-              {/* Tab Navigation */}
-              <div className="flex items-center backdrop-blur-md bg-white/45 p-1.5 rounded-2xl border border-white/50 shadow-md shadow-slate-150/30 overflow-x-auto no-scrollbar max-w-full">
-                {[
-                  { id: 'dashboard', label: 'หน้าแรก', icon: LayoutDashboard },
-                  { id: 'grades', label: 'ตารางคะแนน', icon: Calculator },
-                  { id: 'assignments', label: 'จัดการงาน', icon: FileText },
-                  { id: 'submissions', label: 'ตรวจงาน', icon: Monitor },
-                  { id: 'materials', label: 'สื่อการสอน', icon: Link },
-                  { id: 'attendance', label: 'เช็คชื่อ', icon: CheckCircle2 },
-                  ...(user ? [{ id: 'admin', label: 'ระบบหลังบ้าน', icon: Settings }] : [])
-                ].map((tab) => {
-                  const Icon = tab.icon;
-                  const isActive = teacherTab === tab.id;
-                  const pendingSubmissions = tab.id === 'submissions' 
-                    ? (appData.submissions || []).filter(s => s.status === 'pending').length 
-                    : 0;
+              {/* Tab Navigation with Collapsible / Responsive Design */}
+              {isTabsCollapsed ? (
+                <div className="flex items-center gap-2 max-w-full">
+                  <div className="flex items-center backdrop-blur-md bg-white/60 p-1.5 rounded-2xl border border-white/50 shadow-md shadow-indigo-50/50">
+                    {(() => {
+                      const tabs = [
+                        { id: 'dashboard', label: 'หน้าแรก', icon: LayoutDashboard },
+                        { id: 'grades', label: 'ตารางคะแนน', icon: Calculator },
+                        { id: 'assignments', label: 'จัดการงาน', icon: FileText },
+                        { id: 'submissions', label: 'ตรวจงาน', icon: Monitor },
+                        { id: 'materials', label: 'สื่อการสอน', icon: Link },
+                        { id: 'attendance', label: 'เช็คชื่อ', icon: CheckCircle2 },
+                        ...(user ? [{ id: 'admin', label: 'ระบบหลังบ้าน', icon: Settings }] : [])
+                      ];
+                      const activeTabObj = tabs.find(t => t.id === teacherTab) || tabs[0];
+                      const Icon = activeTabObj.icon;
+                      const pendingSubmissions = activeTabObj.id === 'submissions' 
+                        ? (appData.submissions || []).filter(s => s.status === 'pending').length 
+                        : 0;
 
-                  const handleClick = () => {
-                    setTeacherTab(tab.id as any);
-                  };
+                      return (
+                        <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl font-black text-sm">
+                          <Icon className="w-4 h-4 text-indigo-600" />
+                          <span>{activeTabObj.label}</span>
+                          {pendingSubmissions > 0 && (
+                            <span className="flex h-4.5 w-4.5 items-center justify-center rounded-full text-[10px] font-bold bg-rose-500 text-white shadow-sm px-1 min-w-[18px]">
+                              {pendingSubmissions}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
 
-                  return (
+                    <span className="w-px h-5 bg-slate-200 mx-2" />
+
                     <button
-                      key={tab.id}
-                      onClick={handleClick}
-                      className={`relative flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-all text-sm whitespace-nowrap min-w-fit cursor-pointer ${
-                        isActive ? 'text-indigo-650' : 'text-slate-500 hover:text-slate-800 hover:bg-white/20'
-                      }`}
+                      onClick={() => setIsTabsCollapsed(false)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 hover:bg-slate-50 text-slate-500 hover:text-indigo-650 rounded-xl font-bold text-xs transition-all cursor-pointer border border-transparent hover:border-slate-100"
                     >
-                      {isActive && (
-                        <motion.div
-                          layoutId="activeTab"
-                          className="absolute inset-0 bg-white shadow-md border border-white/60 rounded-xl"
-                          transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                        />
-                      )}
-                      
-                      <span className="relative z-10 flex items-center gap-2">
-                        <Icon className={`w-4 h-4 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
-                        {tab.label}
-                        {pendingSubmissions > 0 && (
-                          <span className={`flex h-4.5 w-4.5 items-center justify-center rounded-full text-[10px] font-bold ${
-                            isActive ? 'bg-indigo-600 text-white' : 'bg-rose-500 text-white'
-                          } shadow-sm px-1 min-w-[18px]`}>
-                            {pendingSubmissions}
-                          </span>
-                        )}
-                      </span>
+                      <Menu className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+                      <span>แสดงเมนูทั้งหมด</span>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                     </button>
-                  );
-                })}
-              </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center backdrop-blur-md bg-white/45 p-1.5 rounded-2xl border border-white/50 shadow-md shadow-slate-150/30 overflow-x-auto no-scrollbar max-w-full relative pr-12">
+                  <div className="flex items-center gap-1">
+                    {[
+                      { id: 'dashboard', label: 'หน้าแรก', icon: LayoutDashboard },
+                      { id: 'grades', label: 'ตารางคะแนน', icon: Calculator },
+                      { id: 'assignments', label: 'จัดการงาน', icon: FileText },
+                      { id: 'submissions', label: 'ตรวจงาน', icon: Monitor },
+                      { id: 'materials', label: 'สื่อการสอน', icon: Link },
+                      { id: 'attendance', label: 'เช็คชื่อ', icon: CheckCircle2 },
+                      ...(user ? [{ id: 'admin', label: 'ระบบหลังบ้าน', icon: Settings }] : [])
+                    ].map((tab) => {
+                      const Icon = tab.icon;
+                      const isActive = teacherTab === tab.id;
+                      const pendingSubmissions = tab.id === 'submissions' 
+                        ? (appData.submissions || []).filter(s => s.status === 'pending').length 
+                        : 0;
+
+                      const handleClick = () => {
+                        setTeacherTab(tab.id as any);
+                      };
+
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={handleClick}
+                          className={`relative flex items-center gap-1.5 px-4 py-2.5 rounded-xl font-bold transition-all text-xs md:text-sm whitespace-nowrap min-w-fit cursor-pointer ${
+                            isActive ? 'text-indigo-650' : 'text-slate-500 hover:text-slate-800 hover:bg-white/20'
+                          }`}
+                        >
+                          {isActive && (
+                            <motion.div
+                              layoutId="activeTab"
+                              className="absolute inset-0 bg-white shadow-md border border-white/60 rounded-xl"
+                              transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                          )}
+                          
+                          <span className="relative z-10 flex items-center gap-1.5">
+                            <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
+                            {tab.label}
+                            {pendingSubmissions > 0 && (
+                              <span className={`flex h-4.5 w-4.5 items-center justify-center rounded-full text-[10px] font-bold ${
+                                isActive ? 'bg-indigo-600 text-white' : 'bg-rose-500 text-white'
+                              } shadow-sm px-1 min-w-[18px]`}>
+                                {pendingSubmissions}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Collapse Toggle Button */}
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-md p-1 rounded-lg shadow-sm border border-slate-200/50 hover:bg-white hover:shadow transition-all">
+                    <button
+                      onClick={() => setIsTabsCollapsed(true)}
+                      className="flex items-center justify-center p-1 text-slate-400 hover:text-indigo-600 transition-all cursor-pointer"
+                      title="ย่อเมนูทั้งหมด"
+                    >
+                      <ChevronDown className="w-4 h-4 rotate-180 text-indigo-500" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
             </motion.div>
 
