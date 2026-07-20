@@ -623,9 +623,14 @@ export default function App() {
     }
   }, []);
 
-  const [teacherTab, setTeacherTab] = useState<'dashboard' | 'grades' | 'assignments' | 'submissions' | 'attendance' | 'materials' | 'admin'>('dashboard');
+  const [teacherTab, setTeacherTab] = useState<'dashboard' | 'workspace' | 'admin'>('dashboard');
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [currentAttendance, setCurrentAttendance] = useState<Record<string, 'present' | 'late' | 'absent' | 'leave'>>({});
+
+  // Workspace Sub-tab States & Variables
+  const [workspaceSubTab, setWorkspaceSubTab] = useState<'grades' | 'attendance' | 'assignments' | 'materials'>('grades');
+  const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
+  const [typedAssignmentScores, setTypedAssignmentScores] = useState<Record<string, string>>({});
 
   // Database Admin Console States & Variables
   const [migrationSrcSubject, setMigrationSrcSubject] = useState('');
@@ -1812,7 +1817,7 @@ export default function App() {
                                   setIsActionsMenuOpen(false);
                                 }}
                                 disabled={isExporting}
-                                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-indigo-50 text-indigo-600 text-sm transition-colors text-left disabled:opacity-50"
+                                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-indigo-50 text-indigo-650 text-sm transition-colors text-left disabled:opacity-50"
                               >
                                 {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileType className="w-4 h-4" />}
                                 <span className="font-bold">{isExporting ? 'กำลังสร้างไฟล์...' : 'ส่งออกเป็นไฟล์ PDF'}</span>
@@ -1834,6 +1839,7 @@ export default function App() {
 
                             <div className="mt-2 pt-2 border-t border-slate-100">
                               <button 
+            )}                        <button 
                                 onClick={() => auth.signOut()} 
                                 className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 text-slate-400 text-sm transition-colors text-left"
                               >
@@ -1870,17 +1876,13 @@ export default function App() {
               {/* Tab Navigation */}
               <div className="flex items-center backdrop-blur-md bg-white/45 p-1.5 rounded-2xl border border-white/50 shadow-md shadow-slate-150/30 overflow-x-auto no-scrollbar max-w-full">
                 {[
-                  { id: 'dashboard', label: 'หน้าแรก', icon: LayoutDashboard },
-                  { id: 'grades', label: 'ตารางคะแนน', icon: Calculator },
-                  { id: 'assignments', label: 'จัดการงาน', icon: FileText },
-                  { id: 'submissions', label: 'ตรวจงาน', icon: Monitor },
-                  { id: 'materials', label: 'สื่อการสอน', icon: Link },
-                  { id: 'attendance', label: 'เช็คชื่อ', icon: CheckCircle2 },
+                  { id: 'dashboard', label: 'แดชบอร์ด', icon: LayoutDashboard },
+                  ...(selectedSubjectId && selectedClassId ? [{ id: 'workspace', label: 'ห้องเรียน', icon: BookOpen }] : []),
                   ...(user ? [{ id: 'admin', label: 'ระบบหลังบ้าน', icon: Settings }] : [])
                 ].map((tab) => {
                   const Icon = tab.icon;
                   const isActive = teacherTab === tab.id;
-                  const pendingSubmissions = tab.id === 'submissions' 
+                  const pendingSubmissions = tab.id === 'workspace' 
                     ? (appData.submissions || []).filter(s => s.status === 'pending').length 
                     : 0;
 
@@ -1922,36 +1924,76 @@ export default function App() {
 
             </motion.div>
 
-            {teacherTab !== 'dashboard' && (
+            {teacherTab === 'workspace' && selectedSubjectId && selectedClassId && (
               <motion.div 
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="backdrop-blur-md bg-white/50 border border-white/60 rounded-2xl px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-slate-700 shadow-md shadow-slate-100/30"
+                className="backdrop-blur-md bg-white/50 border border-white/60 rounded-2xl px-5 py-3.5 flex flex-col xl:flex-row xl:items-center justify-between gap-3 text-slate-700 shadow-md shadow-slate-100/30"
               >
+                {/* Left: Course Switcher */}
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-gradient-to-tr from-indigo-500 to-indigo-600 text-white rounded-xl shadow-md shadow-indigo-100">
+                  <div className="p-2 bg-gradient-to-tr from-indigo-500 to-indigo-600 text-white rounded-xl shadow-md shadow-indigo-100">
                     <GraduationCap className="w-4 h-4" />
                   </div>
                   <div className="text-left">
-                    <span className="text-[9px] font-black uppercase tracking-wider text-indigo-500 block leading-none mb-1">กำลังจัดการรายวิชา</span>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-extrabold text-slate-800 text-base">
-                        {appData.subjects.find(s => s.id === selectedSubjectId)?.name || 'ยังเลือกวิชาไม่ได้'}
-                      </span>
-                      <span className="text-slate-300">|</span>
-                      <span className="text-indigo-600 text-sm font-black bg-indigo-50/60 px-2.5 py-0.5 rounded-lg border border-indigo-100/30">
-                        ห้อง {appData.classRooms.find(c => c.id === selectedClassId)?.name || 'ยังเลือกห้องไม่ได้'}
-                      </span>
-                    </div>
+                    <span className="text-[9px] font-black uppercase tracking-wider text-indigo-500 block leading-none mb-1">ห้องเรียนที่กำลังจัดการ</span>
+                    <select
+                      value={`${selectedSubjectId}||${selectedClassId}`}
+                      onChange={(e) => {
+                        const sep = e.target.value.indexOf('||');
+                        setSelectedSubjectId(e.target.value.slice(0, sep));
+                        setSelectedClassId(e.target.value.slice(sep + 2));
+                      }}
+                      className="bg-white/90 border border-slate-200 rounded-xl px-3 py-1 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer shadow-sm"
+                    >
+                      {appData.subjects.flatMap(subject => {
+                        const classrooms = Array.isArray(subject.classroomIds)
+                          ? appData.classRooms.filter(c => subject.classroomIds!.includes(c.id))
+                          : appData.classRooms;
+                        return classrooms.map(classroom => ({ subject, classroom, key: `${subject.id}||${classroom.id}` }));
+                      }).map(({ subject, classroom, key }) => (
+                        <option key={key} value={key}>
+                          {subject.name} — {classroom.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setTeacherTab('dashboard')}
-                  className="flex items-center gap-1.5 text-xs font-black text-indigo-600 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200/80 px-4 py-2.5 rounded-xl shadow-sm hover:shadow transition-all active:scale-95 cursor-pointer self-start sm:self-auto"
-                >
-                  <LayoutDashboard className="w-3.5 h-3.5" />
-                  เปลี่ยนรายวิชา / ห้องเรียน
-                </button>
+
+                {/* Right: Sub-tab Switcher + Change Course Button */}
+                <div className="flex flex-wrap items-center gap-2 justify-start xl:justify-end">
+                  <div className="flex items-center gap-0.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
+                    {[
+                      { id: 'grades', label: 'คะแนน' },
+                      { id: 'attendance', label: 'เช็คชื่อ' },
+                      { id: 'assignments', label: 'งาน/ตรวจ' },
+                      { id: 'materials', label: 'สื่อ' },
+                    ].map((subTab) => {
+                      const isSubActive = workspaceSubTab === subTab.id;
+                      return (
+                        <button
+                          key={subTab.id}
+                          onClick={() => setWorkspaceSubTab(subTab.id as any)}
+                          className={`px-3.5 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                            isSubActive 
+                              ? 'bg-white text-indigo-600 shadow-sm' 
+                              : 'text-slate-500 hover:text-slate-700 hover:bg-white/60'
+                          }`}
+                        >
+                          {subTab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button 
+                    onClick={() => setTeacherTab('dashboard')}
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-700 bg-white hover:bg-indigo-50 border border-slate-200 px-3.5 py-2 rounded-xl shadow-sm transition-all active:scale-95 cursor-pointer"
+                  >
+                    <LayoutDashboard className="w-3.5 h-3.5" />
+                    เปลี่ยนวิชา
+                  </button>
+                </div>
               </motion.div>
             )}
 
@@ -2027,7 +2069,8 @@ export default function App() {
                           onClick={() => {
                             setSelectedSubjectId(subject.id);
                             setSelectedClassId(classroom.id);
-                            setTeacherTab('grades');
+                            setTeacherTab('workspace');
+                            setWorkspaceSubTab('grades');
                           }}
                         >
                           <div className="p-8 space-y-6 relative">
