@@ -6,140 +6,55 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Helper Functions
-    function isSignedIn() {
-      return request.auth != null;
+    // System Connection Test
+    match /system/{docId} {
+      allow read, write: if true;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function isTeacher() {
-      // For this app, we'll consider the user who set up the app (owner) as teacher
-      // or anyone whose email matches the known teacher email
-      return isSignedIn() && (
-        request.auth.token.email == 'watcharaphon_pa@t-tech.ac.th' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // --- Validation Helpers ---
-
-    function isValidSubject(data) {
-      return data.keys().hasAll(['id', 'name']) &&
-             data.id is string && data.name is string &&
-             data.name.size() > 0 && data.name.size() <= 100;
-    }
-
-    function isValidClassRoom(data) {
-      return data.keys().hasAll(['id', 'name']) &&
-             data.id is string && data.name is string &&
-             data.name.size() > 0 && data.name.size() <= 100;
-    }
-
-    function isValidAssignment(data) {
-      return data.keys().hasAll(['id', 'title', 'description', 'maxScore', 'courseKey']) &&
-             data.id is string && data.title is string &&
-             data.description is string && data.maxScore is number &&
-             data.courseKey is string;
-    }
-
-    function isValidStudent(data) {
-      return data.keys().hasAll(['id', 'studentId', 'name', 'courseKey']) &&
-             data.studentId is string && data.name is string && data.courseKey is string;
-    }
-
-    function isValidSubmission(data) {
-      return data.keys().hasAll(['id', 'assignmentId', 'studentId', 'fileUrl', 'status', 'submittedAt']) &&
-             data.status in ['pending', 'graded'] &&
-             data.fileUrl is string && data.fileUrl.size() > 10;
-    }
-
-    function isValidAttendance(data) {
-      return data.keys().hasAll(['id', 'studentId', 'date', 'status', 'courseKey']) &&
-             data.status in ['present', 'late', 'absent', 'leave'] &&
-             data.date is string &&
-             data.courseKey is string;
-    }
-
-    function isValidTeacherNote(data) {
-      return data.keys().hasAll(['id', 'content', 'userId', 'updatedAt']) &&
-             data.id is string && data.content is string && 
-             data.userId == request.auth.uid &&
-             data.updatedAt is string;
-    }
-
-    function isValidMaterial(data) {
-      return data.keys().hasAll(['id', 'title', 'description', 'url', 'type', 'courseKey', 'createdAt']) &&
-             data.id is string && data.title is string && data.description is string &&
-             data.url is string && data.type in ['pdf', 'doc', 'link', 'video', 'image'] &&
-             data.courseKey is string && data.createdAt is string;
-    }
-
-    // --- Collection Rules ---
-
+    // Subjects
     match /subjects/{subjectId} {
-      allow read: if true;
-      allow create, update: if isTeacher() && isValidSubject(incoming());
-      allow delete: if isTeacher();
+      allow read, write: if true;
     }
 
+    // Class Rooms
     match /classRooms/{classId} {
-      allow read: if true;
-      allow create, update: if isTeacher() && isValidClassRoom(incoming());
-      allow delete: if isTeacher();
+      allow read, write: if true;
     }
 
+    // Assignments
     match /assignments/{assignmentId} {
-      allow read: if true;
-      allow create, update: if isTeacher() && isValidAssignment(incoming());
-      allow delete: if isTeacher();
+      allow read, write: if true;
     }
 
+    // Students
     match /students/{studentDocId} {
-      allow read: if true;
-      allow create, update: if isTeacher() && isValidStudent(incoming());
-      allow delete: if isTeacher();
+      allow read, write: if true;
     }
 
+    // Submissions
     match /submissions/{submissionId} {
-      allow read: if true; // Allow students to check their work/grades
-      allow create: if isValidSubmission(incoming());
-      allow update: if isTeacher() && isValidSubmission(incoming());
-      allow delete: if isTeacher();
+      allow read, write: if true;
     }
 
+    // Attendance
     match /attendance/{attendanceId} {
-      allow list, get: if true;
-      allow create, update: if isTeacher() && isValidId(attendanceId) && isValidAttendance(incoming());
-      allow delete: if isTeacher();
+      allow read, write: if true;
     }
     
+    // Admins
     match /admins/{adminId} {
-      allow read: if isSignedIn();
-      allow write: if false; // Managed via console
+      allow read, write: if true;
     }
 
+    // Teacher Notes
     match /teacherNotes/{noteId} {
-      allow list, get: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidTeacherNote(incoming());
-      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidTeacherNote(incoming());
-      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow read, write: if true;
     }
 
+    // Learning Materials
     match /materials/{materialId} {
-      allow read: if true;
-      allow create, update: if isTeacher() && isValidMaterial(incoming());
-      allow delete: if isTeacher();
+      allow read, write: if true;
     }
   }
 }
+

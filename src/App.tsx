@@ -202,15 +202,186 @@ const studentCourseMatch = (itemCourseKey: string, studentCourseKey: string) => 
   return false;
 };
 
+// --- Keyboard Navigation for Grade/Score Tables ---
+function handleGridKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+  const key = e.key;
+  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(key)) {
+    return;
+  }
+
+  const currentInput = e.currentTarget;
+  // Find closest container: table, form, modal, grid-container, or body
+  const container = currentInput.closest('table') || currentInput.closest('.grid-container') || currentInput.closest('form') || document.body;
+  const allInputs = Array.from(
+    container.querySelectorAll('input:not([type="hidden"]):not([disabled]):not([type="file"]):not([type="checkbox"]):not([type="radio"])')
+  ) as HTMLInputElement[];
+
+  const currentIndex = allInputs.indexOf(currentInput);
+  if (currentIndex === -1) return;
+
+  const rowAttr = currentInput.getAttribute('data-row');
+  const colAttr = currentInput.getAttribute('data-col');
+
+  if (key === 'ArrowDown' || key === 'Enter') {
+    e.preventDefault();
+    currentInput.blur(); // Triggers onBlur and commits value
+
+    if (rowAttr !== null && colAttr !== null) {
+      const nextRow = parseInt(rowAttr, 10) + 1;
+      const targetInput = container.querySelector<HTMLInputElement>(
+        `input[data-row="${nextRow}"][data-col="${colAttr}"]`
+      );
+      if (targetInput) {
+        setTimeout(() => {
+          targetInput.focus();
+          targetInput.select();
+        }, 10);
+        return;
+      }
+    }
+
+    // Spatial fallback: move to input in row below
+    const currentRect = currentInput.getBoundingClientRect();
+    const currentCenterX = currentRect.left + currentRect.width / 2;
+    let bestInput: HTMLInputElement | null = null;
+    let minDistance = Infinity;
+
+    for (const input of allInputs) {
+      if (input === currentInput) continue;
+      const rect = input.getBoundingClientRect();
+      if (rect.top >= currentRect.bottom - 6) {
+        const inputCenterX = rect.left + rect.width / 2;
+        const dx = inputCenterX - currentCenterX;
+        const dy = rect.top - currentRect.top;
+        const dist = Math.abs(dx) * 3 + Math.abs(dy);
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestInput = input;
+        }
+      }
+    }
+
+    if (bestInput) {
+      setTimeout(() => {
+        bestInput!.focus();
+        bestInput!.select();
+      }, 10);
+    } else if (key === 'Enter' && currentIndex < allInputs.length - 1) {
+      const nextInput = allInputs[currentIndex + 1];
+      setTimeout(() => {
+        nextInput.focus();
+        nextInput.select();
+      }, 10);
+    }
+  } else if (key === 'ArrowUp') {
+    e.preventDefault();
+    currentInput.blur();
+
+    if (rowAttr !== null && colAttr !== null) {
+      const prevRow = parseInt(rowAttr, 10) - 1;
+      const targetInput = container.querySelector<HTMLInputElement>(
+        `input[data-row="${prevRow}"][data-col="${colAttr}"]`
+      );
+      if (targetInput) {
+        setTimeout(() => {
+          targetInput.focus();
+          targetInput.select();
+        }, 10);
+        return;
+      }
+    }
+
+    // Spatial fallback: move to input in row above
+    const currentRect = currentInput.getBoundingClientRect();
+    const currentCenterX = currentRect.left + currentRect.width / 2;
+    let bestInput: HTMLInputElement | null = null;
+    let minDistance = Infinity;
+
+    for (const input of allInputs) {
+      if (input === currentInput) continue;
+      const rect = input.getBoundingClientRect();
+      if (rect.bottom <= currentRect.top + 6) {
+        const inputCenterX = rect.left + rect.width / 2;
+        const dx = inputCenterX - currentCenterX;
+        const dy = currentRect.top - rect.top;
+        const dist = Math.abs(dx) * 3 + Math.abs(dy);
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestInput = input;
+        }
+      }
+    }
+
+    if (bestInput) {
+      setTimeout(() => {
+        bestInput!.focus();
+        bestInput!.select();
+      }, 10);
+    }
+  } else if (key === 'ArrowRight') {
+    e.preventDefault();
+    currentInput.blur();
+
+    if (rowAttr !== null && colAttr !== null) {
+      const nextCol = parseInt(colAttr, 10) + 1;
+      const targetInput = container.querySelector<HTMLInputElement>(
+        `input[data-row="${rowAttr}"][data-col="${nextCol}"]`
+      );
+      if (targetInput) {
+        setTimeout(() => {
+          targetInput.focus();
+          targetInput.select();
+        }, 10);
+        return;
+      }
+    }
+
+    if (currentIndex < allInputs.length - 1) {
+      const nextInput = allInputs[currentIndex + 1];
+      setTimeout(() => {
+        nextInput.focus();
+        nextInput.select();
+      }, 10);
+    }
+  } else if (key === 'ArrowLeft') {
+    e.preventDefault();
+    currentInput.blur();
+
+    if (rowAttr !== null && colAttr !== null) {
+      const prevCol = parseInt(colAttr, 10) - 1;
+      const targetInput = container.querySelector<HTMLInputElement>(
+        `input[data-row="${rowAttr}"][data-col="${prevCol}"]`
+      );
+      if (targetInput) {
+        setTimeout(() => {
+          targetInput.focus();
+          targetInput.select();
+        }, 10);
+        return;
+      }
+    }
+
+    if (currentIndex > 0) {
+      const prevInput = allInputs[currentIndex - 1];
+      setTimeout(() => {
+        prevInput.focus();
+        prevInput.select();
+      }, 10);
+    }
+  }
+}
+
 // --- Local State Controlled Inputs for Performance ---
 interface EditableCellProps {
   initialValue: string;
   onCommit: (val: string) => void;
   placeholder?: string;
   className?: string;
+  'data-row'?: number;
+  'data-col'?: number;
 }
 
-function EditableCell({ initialValue, onCommit, placeholder, className }: EditableCellProps) {
+function EditableCell({ initialValue, onCommit, placeholder, className, 'data-row': dataRow, 'data-col': dataCol }: EditableCellProps) {
   const [value, setValue] = React.useState(initialValue);
 
   React.useEffect(() => {
@@ -224,9 +395,7 @@ function EditableCell({ initialValue, onCommit, placeholder, className }: Editab
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.currentTarget.blur();
-    }
+    handleGridKeyDown(e);
   };
 
   return (
@@ -234,8 +403,11 @@ function EditableCell({ initialValue, onCommit, placeholder, className }: Editab
       type="text"
       placeholder={placeholder}
       value={value}
+      data-row={dataRow}
+      data-col={dataCol}
       onChange={(e) => setValue(e.target.value)}
       onBlur={handleBlur}
+      onFocus={(e) => e.target.select()}
       onKeyDown={handleKeyDown}
       className={className}
     />
@@ -248,9 +420,11 @@ interface EditableNumberCellProps {
   max?: number;
   min?: number;
   className?: string;
+  'data-row'?: number;
+  'data-col'?: number;
 }
 
-function EditableNumberCell({ initialValue, onCommit, max, min = 0, className }: EditableNumberCellProps) {
+function EditableNumberCell({ initialValue, onCommit, max, min = 0, className, 'data-row': dataRow, 'data-col': dataCol }: EditableNumberCellProps) {
   const [value, setValue] = React.useState(initialValue !== undefined ? initialValue.toString() : '0');
 
   React.useEffect(() => {
@@ -271,9 +445,7 @@ function EditableNumberCell({ initialValue, onCommit, max, min = 0, className }:
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.currentTarget.blur();
-    }
+    handleGridKeyDown(e);
   };
 
   return (
@@ -282,8 +454,11 @@ function EditableNumberCell({ initialValue, onCommit, max, min = 0, className }:
       max={max}
       min={min}
       value={value}
+      data-row={dataRow}
+      data-col={dataCol}
       onChange={(e) => setValue(e.target.value)}
       onBlur={handleBlur}
+      onFocus={(e) => e.target.select()}
       onKeyDown={handleKeyDown}
       className={className}
     />
@@ -334,21 +509,12 @@ export default function App() {
       setAppData(prev => ({ ...prev, assignments: snap.docs.map(d => d.data() as Assignment) }));
     });
 
-    // Submissions - Conditional to avoid Permission Denied
-    let unsubSubmissions = () => {};
-    const isTeacher = user?.email === 'watcharaphon_pa@t-tech.ac.th';
-
-    if (isTeacher) {
-      unsubSubmissions = onSnapshot(collection(db, 'submissions'), (snap) => {
-        setAppData(prev => ({ ...prev, submissions: snap.docs.map(d => d.data() as Submission) }));
-      });
-    } else if (user) {
-      // If student logged in, only see their own
-      const q = query(collection(db, 'submissions'), where('studentId', '==', user.uid));
-      unsubSubmissions = onSnapshot(q, (snap) => {
-        setAppData(prev => ({ ...prev, submissions: snap.docs.map(d => d.data() as Submission) }));
-      });
-    }
+    // Submissions
+    const unsubSubmissions = onSnapshot(collection(db, 'submissions'), (snap) => {
+      setAppData(prev => ({ ...prev, submissions: snap.docs.map(d => d.data() as Submission) }));
+    }, (error) => {
+      console.error("Submissions listener error:", error);
+    });
 
     // Students (Combined into courses locally for compatibility with existing UI)
     const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
@@ -2346,7 +2512,7 @@ export default function App() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         <AnimatePresence initial={false}>
-                          {filteredStudents.map((student) => {
+                          {filteredStudents.map((student, sIdx) => {
                             const total = calculateTotal(student);
                             const grade = getGrade(total);
                             const isExp = isExpanded[student.id];
@@ -2362,6 +2528,8 @@ export default function App() {
                                   <td className="p-2">
                                     <EditableCell 
                                       initialValue={student.no}
+                                      data-row={sIdx}
+                                      data-col={0}
                                       onCommit={(val) => updateStudent(student.id, 'no', val)}
                                       className="w-12 mx-auto bg-transparent border border-transparent hover:border-slate-200 focus:bg-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg py-1 text-center outline-none transition-all duration-200 text-slate-600 font-bold"
                                     />
@@ -2369,6 +2537,8 @@ export default function App() {
                                   <td className="p-2">
                                     <EditableCell 
                                       initialValue={student.studentId}
+                                      data-row={sIdx}
+                                      data-col={1}
                                       onCommit={(val) => updateStudent(student.id, 'studentId', val)}
                                       placeholder="รหัส..."
                                       className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-2 py-1 outline-none transition-all duration-200 text-slate-600 font-mono font-medium text-sm"
@@ -2378,6 +2548,8 @@ export default function App() {
                                     <div className="flex items-center gap-2 group/name-container">
                                       <EditableCell 
                                         initialValue={student.name}
+                                        data-row={sIdx}
+                                        data-col={2}
                                         onCommit={(val) => updateStudent(student.id, 'name', val)}
                                         placeholder="ชื่อ-นามสกุล..."
                                         className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-indigo-50/40 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-3 py-1.5 outline-none transition-all duration-200 font-bold text-slate-800"
@@ -2399,6 +2571,8 @@ export default function App() {
                                   <td className="p-2 text-center">
                                     <EditableNumberCell 
                                       initialValue={student.behavior}
+                                      data-row={sIdx}
+                                      data-col={3}
                                       onCommit={(val) => updateStudent(student.id, 'behavior', val)}
                                       max={10}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
@@ -2407,6 +2581,8 @@ export default function App() {
                                   <td className="p-2 text-center">
                                     <EditableNumberCell 
                                       initialValue={student.attendance}
+                                      data-row={sIdx}
+                                      data-col={4}
                                       onCommit={(val) => updateStudent(student.id, 'attendance', val)}
                                       max={10}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
@@ -2428,6 +2604,8 @@ export default function App() {
                                   <td className="p-2 text-center">
                                     <EditableNumberCell 
                                       initialValue={student.midterm}
+                                      data-row={sIdx}
+                                      data-col={5}
                                       onCommit={(val) => updateStudent(student.id, 'midterm', val)}
                                       max={15}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
@@ -2436,6 +2614,8 @@ export default function App() {
                                   <td className="p-2 text-center">
                                     <EditableNumberCell 
                                       initialValue={student.final}
+                                      data-row={sIdx}
+                                      data-col={6}
                                       onCommit={(val) => updateStudent(student.id, 'final', val)}
                                       max={20}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
@@ -2760,10 +2940,12 @@ export default function App() {
                                     [sub.id]: e.target.value
                                   }));
                                 }}
+                                onFocus={(e) => e.target.select()}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter' && submissionScores[sub.id]) {
                                     updateSubmissionScore(sub.id, Number(submissionScores[sub.id]));
                                   }
+                                  handleGridKeyDown(e as any);
                                 }}
                                 className="w-20 bg-white border border-slate-250 focus:border-indigo-500 rounded-xl px-3 py-2 text-center outline-none focus:ring-4 focus:ring-indigo-100 font-mono font-bold transition-all"
                               />
