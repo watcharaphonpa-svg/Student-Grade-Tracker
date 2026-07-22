@@ -5,7 +5,7 @@ import {
   Loader2, Search, FileText, CheckCircle2, Clock, User, Upload, 
   BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle,
   Link, Check, MoreVertical, LogOut, FileDown, Download, FileType,
-  StickyNote, UserPlus, ArrowUpDown
+  StickyNote, UserPlus, ArrowUpDown, UserX, UserMinus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import jsPDF from 'jspdf';
@@ -39,7 +39,7 @@ interface Student {
   assignment3: SubScores;
   midterm: number;
   final: number;
-  isNewTransferred?: boolean;
+  isDroppedOut?: boolean;
 }
 
 interface Subject {
@@ -227,16 +227,18 @@ function handleGridKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     currentInput.blur(); // Triggers onBlur and commits value
 
     if (rowAttr !== null && colAttr !== null) {
-      const nextRow = parseInt(rowAttr, 10) + 1;
-      const targetInput = container.querySelector<HTMLInputElement>(
-        `input[data-row="${nextRow}"][data-col="${colAttr}"]`
-      );
-      if (targetInput) {
-        setTimeout(() => {
-          targetInput.focus();
-          targetInput.select();
-        }, 10);
-        return;
+      const currentRow = parseInt(rowAttr, 10);
+      for (let step = 1; step <= 50; step++) {
+        const targetInput = container.querySelector<HTMLInputElement>(
+          `input[data-row="${currentRow + step}"][data-col="${colAttr}"]:not([disabled])`
+        );
+        if (targetInput) {
+          setTimeout(() => {
+            targetInput.focus();
+            targetInput.select();
+          }, 10);
+          return;
+        }
       }
     }
 
@@ -278,16 +280,18 @@ function handleGridKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     currentInput.blur();
 
     if (rowAttr !== null && colAttr !== null) {
-      const prevRow = parseInt(rowAttr, 10) - 1;
-      const targetInput = container.querySelector<HTMLInputElement>(
-        `input[data-row="${prevRow}"][data-col="${colAttr}"]`
-      );
-      if (targetInput) {
-        setTimeout(() => {
-          targetInput.focus();
-          targetInput.select();
-        }, 10);
-        return;
+      const currentRow = parseInt(rowAttr, 10);
+      for (let step = 1; step <= 50; step++) {
+        const targetInput = container.querySelector<HTMLInputElement>(
+          `input[data-row="${currentRow - step}"][data-col="${colAttr}"]:not([disabled])`
+        );
+        if (targetInput) {
+          setTimeout(() => {
+            targetInput.focus();
+            targetInput.select();
+          }, 10);
+          return;
+        }
       }
     }
 
@@ -323,16 +327,19 @@ function handleGridKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     currentInput.blur();
 
     if (rowAttr !== null && colAttr !== null) {
-      const nextCol = parseInt(colAttr, 10) + 1;
-      const targetInput = container.querySelector<HTMLInputElement>(
-        `input[data-row="${rowAttr}"][data-col="${nextCol}"]`
-      );
-      if (targetInput) {
-        setTimeout(() => {
-          targetInput.focus();
-          targetInput.select();
-        }, 10);
-        return;
+      const currentCol = parseInt(colAttr, 10);
+      const currentRow = parseInt(rowAttr, 10);
+      for (let step = 1; step <= 10; step++) {
+        const targetInput = container.querySelector<HTMLInputElement>(
+          `input[data-row="${currentRow}"][data-col="${currentCol + step}"]:not([disabled])`
+        );
+        if (targetInput) {
+          setTimeout(() => {
+            targetInput.focus();
+            targetInput.select();
+          }, 10);
+          return;
+        }
       }
     }
 
@@ -348,16 +355,19 @@ function handleGridKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     currentInput.blur();
 
     if (rowAttr !== null && colAttr !== null) {
-      const prevCol = parseInt(colAttr, 10) - 1;
-      const targetInput = container.querySelector<HTMLInputElement>(
-        `input[data-row="${rowAttr}"][data-col="${prevCol}"]`
-      );
-      if (targetInput) {
-        setTimeout(() => {
-          targetInput.focus();
-          targetInput.select();
-        }, 10);
-        return;
+      const currentCol = parseInt(colAttr, 10);
+      const currentRow = parseInt(rowAttr, 10);
+      for (let step = 1; step <= 10; step++) {
+        const targetInput = container.querySelector<HTMLInputElement>(
+          `input[data-row="${currentRow}"][data-col="${currentCol - step}"]:not([disabled])`
+        );
+        if (targetInput) {
+          setTimeout(() => {
+            targetInput.focus();
+            targetInput.select();
+          }, 10);
+          return;
+        }
       }
     }
 
@@ -377,11 +387,13 @@ interface EditableCellProps {
   onCommit: (val: string) => void;
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
+  onDisabledClick?: () => void;
   'data-row'?: number;
   'data-col'?: number;
 }
 
-function EditableCell({ initialValue, onCommit, placeholder, className, 'data-row': dataRow, 'data-col': dataCol }: EditableCellProps) {
+function EditableCell({ initialValue, onCommit, placeholder, className, disabled, onDisabledClick, 'data-row': dataRow, 'data-col': dataCol }: EditableCellProps) {
   const [value, setValue] = React.useState(initialValue);
 
   React.useEffect(() => {
@@ -397,6 +409,26 @@ function EditableCell({ initialValue, onCommit, placeholder, className, 'data-ro
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     handleGridKeyDown(e);
   };
+
+  if (disabled) {
+    return (
+      <div 
+        onClick={onDisabledClick}
+        title="นักเรียนจำหน่ายออก/พ้นสภาพ - ไม่สามารถแก้ไขได้"
+        className="cursor-not-allowed select-none w-full"
+      >
+        <input
+          type="text"
+          disabled
+          value={value}
+          placeholder={placeholder}
+          data-row={dataRow}
+          data-col={dataCol}
+          className={`${className || ''} cursor-not-allowed opacity-60 line-through bg-rose-100/40 text-rose-700 border-rose-200 pointer-events-none`}
+        />
+      </div>
+    );
+  }
 
   return (
     <input
@@ -420,11 +452,13 @@ interface EditableNumberCellProps {
   max?: number;
   min?: number;
   className?: string;
+  disabled?: boolean;
+  onDisabledClick?: () => void;
   'data-row'?: number;
   'data-col'?: number;
 }
 
-function EditableNumberCell({ initialValue, onCommit, max, min = 0, className, 'data-row': dataRow, 'data-col': dataCol }: EditableNumberCellProps) {
+function EditableNumberCell({ initialValue, onCommit, max, min = 0, className, disabled, onDisabledClick, 'data-row': dataRow, 'data-col': dataCol }: EditableNumberCellProps) {
   const [value, setValue] = React.useState(initialValue !== undefined ? initialValue.toString() : '0');
 
   React.useEffect(() => {
@@ -447,6 +481,25 @@ function EditableNumberCell({ initialValue, onCommit, max, min = 0, className, '
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     handleGridKeyDown(e);
   };
+
+  if (disabled) {
+    return (
+      <div 
+        onClick={onDisabledClick}
+        title="นักเรียนจำหน่ายออก/พ้นสภาพ - ไม่สามารถกรอกคะแนนได้"
+        className="cursor-not-allowed select-none inline-block"
+      >
+        <input
+          type="text"
+          disabled
+          value="-"
+          data-row={dataRow}
+          data-col={dataCol}
+          className="w-14 bg-rose-100/60 border border-rose-300 text-rose-600 rounded-lg py-1 text-center font-black outline-none cursor-not-allowed pointer-events-none"
+        />
+      </div>
+    );
+  }
 
   return (
     <input
@@ -573,7 +626,7 @@ export default function App() {
     no: '',
     studentId: '',
     name: '',
-    isNewTransferred: false
+    isDroppedOut: false
   });
   const [excelPasteInput, setExcelPasteInput] = useState('');
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
@@ -631,14 +684,14 @@ export default function App() {
   const students = useMemo(() => (appData.courses || {})[currentCourseKey] || [], [appData.courses, currentCourseKey]);
   const currentAssignments = useMemo(() => (appData.assignments || []).filter(a => a.courseKey === currentCourseKey), [appData.assignments, currentCourseKey]);
 
-  const [studentFilter, setStudentFilter] = useState<'all' | 'normal' | 'transferred'>('all');
+  const [studentFilter, setStudentFilter] = useState<'all' | 'normal' | 'dropped'>('all');
 
   const filteredStudents = useMemo(() => {
-    if (studentFilter === 'transferred') {
-      return students.filter(s => s.isNewTransferred);
+    if (studentFilter === 'dropped') {
+      return students.filter(s => s.isDroppedOut);
     }
     if (studentFilter === 'normal') {
-      return students.filter(s => !s.isNewTransferred);
+      return students.filter(s => !s.isDroppedOut);
     }
     return students;
   }, [students, studentFilter]);
@@ -1283,7 +1336,7 @@ export default function App() {
       no: (students.length + 1).toString(),
       studentId: '',
       name: '',
-      isNewTransferred: false
+      isDroppedOut: false
     });
     setAddStudentTab('individual');
     setIsAddStudentModalOpen(true);
@@ -1311,7 +1364,7 @@ export default function App() {
       assignment3: { part1: 0, part2: 0, part3: 0 },
       midterm: 0,
       final: 0,
-      isNewTransferred: singleStudentInput.isNewTransferred
+      isDroppedOut: singleStudentInput.isDroppedOut
     };
 
     try {
@@ -1323,7 +1376,7 @@ export default function App() {
           no: (Number(prev.no) ? Number(prev.no) + 1 : students.length + 2).toString(),
           studentId: '',
           name: '',
-          isNewTransferred: prev.isNewTransferred
+          isDroppedOut: prev.isDroppedOut
         }));
       } else {
         setIsAddStudentModalOpen(false);
@@ -1386,7 +1439,7 @@ export default function App() {
         assignment3: { part1: 0, part2: 0, part3: 0 },
         midterm: 0,
         final: 0,
-        isNewTransferred: singleStudentInput.isNewTransferred
+        isDroppedOut: singleStudentInput.isDroppedOut
       };
 
       batchPromises.push(setDoc(doc(db, 'students', id), newStudent));
@@ -1469,13 +1522,14 @@ export default function App() {
   };
 
   const stats = useMemo(() => {
-    if (students.length === 0) return { avg: 0, passRate: 0 };
-    const totals = students.map(s => calculateTotal(s));
-    const avg = totals.reduce((a, b) => a + b, 0) / students.length;
+    const activeStudents = students.filter(s => !s.isDroppedOut);
+    if (activeStudents.length === 0) return { avg: 0, passRate: 0 };
+    const totals = activeStudents.map(s => calculateTotal(s));
+    const avg = totals.reduce((a, b) => a + b, 0) / activeStudents.length;
     const passCount = totals.filter(t => t >= 50).length;
     return {
       avg: avg.toFixed(2),
-      passRate: ((passCount / students.length) * 100).toFixed(1)
+      passRate: ((passCount / activeStudents.length) * 100).toFixed(1)
     };
   }, [students, appData.submissions]);
 
@@ -1510,7 +1564,7 @@ export default function App() {
           assignment3: { part1: 0, part2: 0, part3: 0 },
           midterm: 0,
           final: 0,
-          isNewTransferred: false
+          isDroppedOut: false
         };
         await setDoc(doc(db, 'students', id), newStudent);
         count++;
@@ -2417,11 +2471,11 @@ export default function App() {
                     className="backdrop-blur-md bg-white/70 border border-white/60 p-6 rounded-[2rem] shadow-md shadow-slate-100/40 flex items-center gap-4 transition-all duration-300"
                   >
                     <div className="p-3.5 bg-rose-50/70 text-rose-600 rounded-2xl border border-rose-100/20 shadow-inner">
-                      <UserPlus className="w-6 h-6" />
+                      <UserX className="w-6 h-6" />
                     </div>
                     <div className="text-left">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">ย้ายเข้าใหม่</p>
-                      <p className="text-3xl font-black text-slate-800 font-mono mt-0.5">{students.filter(s => s.isNewTransferred).length} <span className="text-xs font-bold text-slate-400 font-sans">คน</span></p>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">จำหน่ายออก / พ้นสภาพ</p>
+                      <p className="text-3xl font-black text-slate-800 font-mono mt-0.5">{students.filter(s => s.isDroppedOut).length} <span className="text-xs font-bold text-slate-400 font-sans">คน</span></p>
                     </div>
                   </motion.div>
                   <motion.div 
@@ -2475,18 +2529,18 @@ export default function App() {
                           : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'
                       }`}
                     >
-                      ปกติ ({students.filter(s => !s.isNewTransferred).length})
+                      ปกติ ({students.filter(s => !s.isDroppedOut).length})
                     </button>
                     <button
-                      onClick={() => setStudentFilter('transferred')}
+                      onClick={() => setStudentFilter('dropped')}
                       className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black transition-all duration-205 ${
-                        studentFilter === 'transferred'
-                          ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100 scale-102 font-extrabold'
-                          : 'text-indigo-600 hover:text-indigo-755 hover:bg-white/45'
+                        studentFilter === 'dropped'
+                          ? 'bg-rose-600 text-white shadow-md shadow-rose-100 scale-102 font-extrabold'
+                          : 'text-rose-600 hover:text-rose-700 hover:bg-rose-50/50'
                       }`}
                     >
-                      <ArrowUpDown className="w-3.5 h-3.5" />
-                      ย้ายเข้าใหม่ ({students.filter(s => s.isNewTransferred).length})
+                      <UserX className="w-3.5 h-3.5" />
+                      จำหน่ายออก ({students.filter(s => s.isDroppedOut).length})
                     </button>
                   </div>
                 </div>
@@ -2516,6 +2570,15 @@ export default function App() {
                             const total = calculateTotal(student);
                             const grade = getGrade(total);
                             const isExp = isExpanded[student.id];
+                            const isDropped = Boolean(student.isDroppedOut);
+
+                            const handleDisabledAlert = () => {
+                              showAlert(
+                                'นักเรียนจำหน่ายออก/พ้นสภาพ',
+                                `นักเรียน ${student.name} (รหัส ${student.studentId || '-'}) มีสถานะ "จำหน่ายออก/พ้นสภาพ" ไม่สามารถบันทึกหรือแก้ไขคะแนนได้`,
+                                'warning'
+                              );
+                            };
 
                             return (
                               <React.Fragment key={student.id}>
@@ -2523,13 +2586,19 @@ export default function App() {
                                   initial={{ opacity: 0 }}
                                   animate={{ opacity: 1 }}
                                   exit={{ opacity: 0 }}
-                                  className="hover:bg-slate-50/30 transition-colors group"
+                                  className={`transition-colors group ${
+                                    isDropped 
+                                      ? 'bg-rose-50/70 hover:bg-rose-100/50 border-l-4 border-l-rose-500' 
+                                      : 'hover:bg-slate-50/30'
+                                  }`}
                                 >
                                   <td className="p-2">
                                     <EditableCell 
                                       initialValue={student.no}
                                       data-row={sIdx}
                                       data-col={0}
+                                      disabled={isDropped}
+                                      onDisabledClick={handleDisabledAlert}
                                       onCommit={(val) => updateStudent(student.id, 'no', val)}
                                       className="w-12 mx-auto bg-transparent border border-transparent hover:border-slate-200 focus:bg-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg py-1 text-center outline-none transition-all duration-200 text-slate-600 font-bold"
                                     />
@@ -2539,6 +2608,8 @@ export default function App() {
                                       initialValue={student.studentId}
                                       data-row={sIdx}
                                       data-col={1}
+                                      disabled={isDropped}
+                                      onDisabledClick={handleDisabledAlert}
                                       onCommit={(val) => updateStudent(student.id, 'studentId', val)}
                                       placeholder="รหัส..."
                                       className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-2 py-1 outline-none transition-all duration-200 text-slate-600 font-mono font-medium text-sm"
@@ -2550,21 +2621,25 @@ export default function App() {
                                         initialValue={student.name}
                                         data-row={sIdx}
                                         data-col={2}
+                                        disabled={isDropped}
+                                        onDisabledClick={handleDisabledAlert}
                                         onCommit={(val) => updateStudent(student.id, 'name', val)}
                                         placeholder="ชื่อ-นามสกุล..."
-                                        className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-indigo-50/40 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-3 py-1.5 outline-none transition-all duration-200 font-bold text-slate-800"
+                                        className={`w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-indigo-50/40 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-3 py-1.5 outline-none transition-all duration-200 font-bold ${
+                                          isDropped ? 'text-rose-700 line-through' : 'text-slate-800'
+                                        }`}
                                       />
                                       <button
-                                        onClick={() => updateStudent(student.id, 'isNewTransferred', !student.isNewTransferred)}
+                                        onClick={() => updateStudent(student.id, 'isDroppedOut', !student.isDroppedOut)}
                                         className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold transition-all border ${
-                                          student.isNewTransferred
-                                            ? 'bg-rose-50 text-rose-605 border-rose-200 hover:bg-rose-100 shadow-xs'
-                                            : 'bg-slate-50 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 border-slate-200 hover:border-indigo-200 opacity-0 group-hover/name-container:opacity-100 focus:opacity-100'
+                                          isDropped
+                                            ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                                            : 'bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 border-slate-200 hover:border-rose-200 opacity-0 group-hover/name-container:opacity-100 focus:opacity-100'
                                         }`}
-                                        title={student.isNewTransferred ? "คลิกเพื่อยกเลิกสถานะย้ายเข้าใหม่" : "คลิกเพื่อทำเครื่องหมายเป็นนักเรียนย้ายเข้าใหม่"}
+                                        title={isDropped ? "คลิกเพื่อยกเลิกสถานะจำหน่ายออก" : "คลิกเพื่อทำเครื่องหมายเป็นนักเรียนจำหน่ายออก (พ้นสภาพ)"}
                                       >
-                                        <UserPlus className="w-3 h-3" />
-                                        <span>{student.isNewTransferred ? 'ย้ายเข้าใหม่' : 'ปกติ'}</span>
+                                        <UserX className="w-3 h-3" />
+                                        <span>{isDropped ? 'จำหน่ายออก' : 'ปกติ'}</span>
                                       </button>
                                     </div>
                                   </td>
@@ -2573,6 +2648,8 @@ export default function App() {
                                       initialValue={student.behavior}
                                       data-row={sIdx}
                                       data-col={3}
+                                      disabled={isDropped}
+                                      onDisabledClick={handleDisabledAlert}
                                       onCommit={(val) => updateStudent(student.id, 'behavior', val)}
                                       max={10}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
@@ -2583,6 +2660,8 @@ export default function App() {
                                       initialValue={student.attendance}
                                       data-row={sIdx}
                                       data-col={4}
+                                      disabled={isDropped}
+                                      onDisabledClick={handleDisabledAlert}
                                       onCommit={(val) => updateStudent(student.id, 'attendance', val)}
                                       max={10}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
@@ -2590,15 +2669,25 @@ export default function App() {
                                   </td>
                                   <td className="p-2 text-center">
                                     <button 
-                                      onClick={() => toggleExpand(student.id)}
-                                      className="flex items-center justify-center gap-1.5 mx-auto bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95"
+                                      onClick={() => {
+                                        if (isDropped) {
+                                          handleDisabledAlert();
+                                        } else {
+                                          toggleExpand(student.id);
+                                        }
+                                      }}
+                                      className={`flex items-center justify-center gap-1.5 mx-auto border px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                                        isDropped
+                                          ? 'bg-rose-100/50 text-rose-600 border-rose-200 cursor-not-allowed'
+                                          : 'bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 border-indigo-100'
+                                      }`}
                                     >
-                                      <span className="font-mono">{(() => {
+                                      <span className="font-mono">{isDropped ? '-' : (() => {
                                         return (student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0) +
                                                (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0) +
                                                (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0);
                                       })()}</span>
-                                      {isExp ? <ChevronDown className="w-3.5 h-3.5 text-indigo-500" /> : <ChevronRight className="w-3.5 h-3.5 text-indigo-500" />}
+                                      {!isDropped && (isExp ? <ChevronDown className="w-3.5 h-3.5 text-indigo-500" /> : <ChevronRight className="w-3.5 h-3.5 text-indigo-500" />)}
                                     </button>
                                   </td>
                                   <td className="p-2 text-center">
@@ -2606,6 +2695,8 @@ export default function App() {
                                       initialValue={student.midterm}
                                       data-row={sIdx}
                                       data-col={5}
+                                      disabled={isDropped}
+                                      onDisabledClick={handleDisabledAlert}
                                       onCommit={(val) => updateStudent(student.id, 'midterm', val)}
                                       max={15}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
@@ -2616,27 +2707,39 @@ export default function App() {
                                       initialValue={student.final}
                                       data-row={sIdx}
                                       data-col={6}
+                                      disabled={isDropped}
+                                      onDisabledClick={handleDisabledAlert}
                                       onCommit={(val) => updateStudent(student.id, 'final', val)}
                                       max={20}
                                       className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
                                     />
                                   </td>
-                                  <td className="p-2 text-center font-black text-indigo-650 text-base font-mono">
-                                    {total}
+                                  <td className="p-2 text-center font-black text-base font-mono">
+                                    {isDropped ? (
+                                      <span className="text-rose-600 text-xs font-bold font-sans">-</span>
+                                    ) : (
+                                      <span className="text-indigo-650">{total}</span>
+                                    )}
                                   </td>
                                   <td className="p-2 text-center">
-                                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black shadow-xs ${
-                                      Number(grade) >= 3 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50' : 
-                                      Number(grade) >= 1 ? 'bg-amber-50 text-amber-700 border border-amber-200/50' : 
-                                      'bg-rose-50 text-rose-700 border border-rose-250'
-                                    }`}>
-                                      <span className={`w-1.5 h-1.5 rounded-full ${
-                                        Number(grade) >= 3 ? 'bg-emerald-500' : 
-                                        Number(grade) >= 1 ? 'bg-amber-550' : 
-                                        'bg-rose-500'
-                                      }`} />
-                                      เกรด {grade}
-                                    </span>
+                                    {isDropped ? (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-700 border border-rose-300">
+                                        จำหน่ายออก
+                                      </span>
+                                    ) : (
+                                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black shadow-xs ${
+                                        Number(grade) >= 3 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50' : 
+                                        Number(grade) >= 1 ? 'bg-amber-50 text-amber-700 border border-amber-200/50' : 
+                                        'bg-rose-50 text-rose-700 border border-rose-250'
+                                      }`}>
+                                        <span className={`w-1.5 h-1.5 rounded-full ${
+                                          Number(grade) >= 3 ? 'bg-emerald-500' : 
+                                          Number(grade) >= 1 ? 'bg-amber-550' : 
+                                          'bg-rose-500'
+                                        }`} />
+                                        เกรด {grade}
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="p-2 text-center">
                                     <button 
@@ -4686,23 +4789,23 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Global Mark New/Transferred Switch */}
-              <div className="p-4 px-6 bg-rose-50/45 border-b border-rose-100 flex items-center justify-between gap-4 text-left">
+              {/* Global Mark Dropped Out Switch */}
+              <div className="p-4 px-6 bg-rose-50 border-b border-rose-100 flex items-center justify-between gap-4 text-left">
                 <div className="flex items-start gap-2.5 text-left">
-                  <Info className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <UserX className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs font-bold text-rose-800">ต้องการทำเครื่องหมายเป็น "นักเรียนย้ายเข้าใหม่" ใช่ไหม?</p>
-                    <p className="text-[10px] text-rose-600/90 font-medium">ระบบจะแสดงสัญลักษณ์ "ย้ายเข้า" และแยกกลุ่มคัดกรองให้อัตโนมัติในทุกส่วนของระบบ</p>
+                    <p className="text-xs font-bold text-rose-800">ต้องการทำเครื่องหมายเป็น "นักเรียนจำหน่ายออก / พ้นสภาพ" ใช่ไหม?</p>
+                    <p className="text-[10px] text-rose-600/90 font-medium">ระบบจะแสดงแถบสีแดง ปิดการกรอกคะแนน และข้ามช่องอัตโนมัติเมื่อกดลูกศรคีย์บอร์ด</p>
                   </div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input 
                     type="checkbox" 
-                    checked={singleStudentInput.isNewTransferred} 
-                    onChange={(e) => setSingleStudentInput(prev => ({ ...prev, isNewTransferred: e.target.checked }))}
+                    checked={singleStudentInput.isDroppedOut} 
+                    onChange={(e) => setSingleStudentInput(prev => ({ ...prev, isDroppedOut: e.target.checked }))}
                     className="sr-only peer" 
                   />
-                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-350 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-505 bg-rose-600 bg-slate-300 peer-checked:bg-rose-500" />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600" />
                 </label>
               </div>
 
@@ -4874,7 +4977,7 @@ export default function App() {
                                 assignment3: { part1: 0, part2: 0, part3: 0 },
                                 midterm: 0,
                                 final: 0,
-                                isNewTransferred: singleStudentInput.isNewTransferred
+                                isDroppedOut: singleStudentInput.isDroppedOut
                               };
                               batchPromises.push(setDoc(doc(db, 'students', id), newStudent));
                               count++;
