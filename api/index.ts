@@ -179,6 +179,48 @@ app.post("/api/sheets/sync", async (req, res) => {
       console.warn("Notice: Clear sheet values warning:", clearErr);
     }
 
+    // 1. Reset sheet: Unmerge all previous merged cells, reset textRotation & formats across A1:Z300
+    const batchRequests: any[] = [
+      {
+        unmergeCells: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 300, startColumnIndex: 0, endColumnIndex: 26 }
+        }
+      },
+      {
+        repeatCell: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: 300, startColumnIndex: 0, endColumnIndex: 26 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: { red: 1, green: 1, blue: 1 },
+              textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0, green: 0, blue: 0 } },
+              textRotation: { angle: 0 },
+              horizontalAlignment: "CENTER",
+              verticalAlignment: "MIDDLE",
+              wrapStrategy: "OVERFLOW"
+            }
+          },
+          fields: "userEnteredFormat(backgroundColor,textFormat,textRotation,horizontalAlignment,verticalAlignment,wrapStrategy)"
+        }
+      },
+      {
+        updateDimensionProperties: {
+          range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 300 },
+          properties: { pixelSize: 28 },
+          fields: "pixelSize"
+        }
+      }
+    ];
+
+    // Clear existing values
+    try {
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId: targetSpreadsheetId!,
+        range: `'${targetSheetName}'!A1:Z500`,
+      });
+    } catch (clearErr) {
+      console.warn("Notice: Clear sheet values warning:", clearErr);
+    }
+
     // Customization extraction
     const colOpts = customSettings?.columns || {
       no: true, studentId: true, name: true, behavior: true, attendance: true,
@@ -213,6 +255,24 @@ app.post("/api/sheets/sync", async (req, res) => {
 
     const totalCols = Math.max(headerCols.length, 1);
 
+    // Apply specific Column Widths
+    headerCols.forEach((colName, colIdx) => {
+      let width = 75;
+      if (colName.includes("ลำดับ")) width = 55;
+      else if (colName.includes("รหัส")) width = 125;
+      else if (colName.includes("ชื่อ") || colName.includes("นามสกุล")) width = 230;
+      else if (colName.includes("รวม") || colName.includes("100")) width = 95;
+      else if (colName.includes("สถานะ")) width = 90;
+
+      batchRequests.push({
+        updateDimensionProperties: {
+          range: { sheetId, dimension: "COLUMNS", startIndex: colIdx, endIndex: colIdx + 1 },
+          properties: { pixelSize: width },
+          fields: "pixelSize"
+        }
+      });
+    });
+
     // Build Sheet Rows Array
     const allFormattedRows: any[] = [];
 
@@ -220,13 +280,14 @@ app.post("/api/sheets/sync", async (req, res) => {
     const titleRow1 = new Array(totalCols).fill("");
     titleRow1[0] = institutionName;
     allFormattedRows.push({
-      values: titleRow1.map((val, idx) => ({
+      values: titleRow1.map((val) => ({
         userEnteredValue: { stringValue: String(val) },
         userEnteredFormat: {
-          backgroundColor: { red: 241/255, green: 245/255, blue: 249/255 },
+          backgroundColor: { red: 30/255, green: 41/255, blue: 59/255 }, // Dark slate
           horizontalAlignment: "CENTER",
           verticalAlignment: "MIDDLE",
-          textFormat: { bold: true, fontSize: 13 }
+          textRotation: { angle: 0 },
+          textFormat: { bold: true, fontSize: 12, foregroundColor: { red: 1, green: 1, blue: 1 } }
         }
       }))
     });
@@ -237,10 +298,11 @@ app.post("/api/sheets/sync", async (req, res) => {
       values: titleRow2.map((val) => ({
         userEnteredValue: { stringValue: String(val) },
         userEnteredFormat: {
-          backgroundColor: { red: 248/255, green: 250/255, blue: 252/255 },
+          backgroundColor: { red: 51/255, green: 65/255, blue: 85/255 }, // Slate-700
           horizontalAlignment: "CENTER",
           verticalAlignment: "MIDDLE",
-          textFormat: { bold: true, fontSize: 11 }
+          textRotation: { angle: 0 },
+          textFormat: { bold: true, fontSize: 10, foregroundColor: { red: 1, green: 1, blue: 1 } }
         }
       }))
     });
@@ -251,17 +313,24 @@ app.post("/api/sheets/sync", async (req, res) => {
       values: titleRow3.map((val) => ({
         userEnteredValue: { stringValue: String(val) },
         userEnteredFormat: {
-          backgroundColor: { red: 248/255, green: 250/255, blue: 252/255 },
+          backgroundColor: { red: 241/255, green: 245/255, blue: 249/255 }, // Light slate
           horizontalAlignment: "CENTER",
           verticalAlignment: "MIDDLE",
-          textFormat: { fontSize: 10 }
+          textRotation: { angle: 0 },
+          textFormat: { bold: false, fontSize: 9.5, foregroundColor: { red: 51/255, green: 65/255, blue: 85/255 } }
         }
       }))
     });
 
     // Separator Row (Row 3)
     allFormattedRows.push({
-      values: new Array(totalCols).fill({ userEnteredValue: { stringValue: "" } })
+      values: new Array(totalCols).fill({
+        userEnteredValue: { stringValue: "" },
+        userEnteredFormat: {
+          backgroundColor: { red: 1, green: 1, blue: 1 },
+          textRotation: { angle: 0 }
+        }
+      })
     });
 
     // Column Headers Row (Row 4)
@@ -272,12 +341,13 @@ app.post("/api/sheets/sync", async (req, res) => {
           backgroundColor: { red: 226/255, green: 232/255, blue: 240/255 },
           horizontalAlignment: "CENTER",
           verticalAlignment: "MIDDLE",
-          textFormat: { bold: true, fontSize: 10 }
+          textRotation: { angle: 0 },
+          textFormat: { bold: true, fontSize: 10, foregroundColor: { red: 15/255, green: 23/255, blue: 42/255 } }
         }
       }))
     });
 
-    // Full Score Benchmark Row
+    // Full Score Benchmark Row (Row 5)
     if (includeFullScoreRow) {
       const fullScoreVals: any[] = [];
       if (colOpts.no) fullScoreVals.push({ val: "-", type: "str" });
@@ -301,7 +371,8 @@ app.post("/api/sheets/sync", async (req, res) => {
             backgroundColor: { red: 254/255, green: 243/255, blue: 199/255 },
             horizontalAlignment: "CENTER",
             verticalAlignment: "MIDDLE",
-            textFormat: { bold: true }
+            textRotation: { angle: 0 },
+            textFormat: { bold: true, foregroundColor: { red: 146/255, green: 64/255, blue: 14/255 } }
           }
         }))
       });
@@ -341,6 +412,7 @@ app.post("/api/sheets/sync", async (req, res) => {
             backgroundColor: isDropped ? { red: 254/255, green: 226/255, blue: 226/255 } : { red: 1, green: 1, blue: 1 },
             horizontalAlignment: item.align || "CENTER",
             verticalAlignment: "MIDDLE",
+            textRotation: { angle: 0 },
             textFormat: { bold: item.bold || false, color: isDropped ? { red: 190/255, green: 18/255, blue: 60/255 } : undefined }
           }
         }))
@@ -357,63 +429,75 @@ app.post("/api/sheets/sync", async (req, res) => {
 
       // Blank separator
       allFormattedRows.push({
-        values: new Array(totalCols).fill({ userEnteredValue: { stringValue: "" } })
+        values: new Array(totalCols).fill({
+          userEnteredValue: { stringValue: "" },
+          userEnteredFormat: { textRotation: { angle: 0 } }
+        })
       });
 
-      const avgVals = new Array(totalCols).fill({ userEnteredValue: { stringValue: "" } });
-      avgVals[0] = { userEnteredValue: { stringValue: "คะแนนเฉลี่ย (Average)" }, userEnteredFormat: { textFormat: { bold: true } } };
+      const avgVals = new Array(totalCols).fill({ userEnteredValue: { stringValue: "" }, userEnteredFormat: { textRotation: { angle: 0 } } });
+      avgVals[0] = { userEnteredValue: { stringValue: "คะแนนเฉลี่ย (Average)" }, userEnteredFormat: { textFormat: { bold: true }, textRotation: { angle: 0 } } };
       if (colOpts.total) {
         const totalIdx = headerCols.indexOf("รวมคะแนน (100)");
         if (totalIdx !== -1) {
-          avgVals[totalIdx] = { userEnteredValue: { numberValue: Number(avg) }, userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER" } };
+          avgVals[totalIdx] = { userEnteredValue: { numberValue: Number(avg) }, userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER", textRotation: { angle: 0 } } };
         }
       }
       allFormattedRows.push({ values: avgVals });
 
-      const maxVals = new Array(totalCols).fill({ userEnteredValue: { stringValue: "" } });
-      maxVals[0] = { userEnteredValue: { stringValue: "คะแนนสูงสุด (Max)" }, userEnteredFormat: { textFormat: { bold: true } } };
+      const maxVals = new Array(totalCols).fill({ userEnteredValue: { stringValue: "" }, userEnteredFormat: { textRotation: { angle: 0 } } });
+      maxVals[0] = { userEnteredValue: { stringValue: "คะแนนสูงสุด (Max)" }, userEnteredFormat: { textFormat: { bold: true }, textRotation: { angle: 0 } } };
       if (colOpts.total) {
         const totalIdx = headerCols.indexOf("รวมคะแนน (100)");
         if (totalIdx !== -1) {
-          maxVals[totalIdx] = { userEnteredValue: { numberValue: maxScore }, userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER" } };
+          maxVals[totalIdx] = { userEnteredValue: { numberValue: maxScore }, userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER", textRotation: { angle: 0 } } };
         }
       }
       allFormattedRows.push({ values: maxVals });
 
-      const minVals = new Array(totalCols).fill({ userEnteredValue: { stringValue: "" } });
-      minVals[0] = { userEnteredValue: { stringValue: "คะแนนต่ำสุด (Min)" }, userEnteredFormat: { textFormat: { bold: true } } };
+      const minVals = new Array(totalCols).fill({ userEnteredValue: { stringValue: "" }, userEnteredFormat: { textRotation: { angle: 0 } } });
+      minVals[0] = { userEnteredValue: { stringValue: "คะแนนต่ำสุด (Min)" }, userEnteredFormat: { textFormat: { bold: true }, textRotation: { angle: 0 } } };
       if (colOpts.total) {
         const totalIdx = headerCols.indexOf("รวมคะแนน (100)");
         if (totalIdx !== -1) {
-          minVals[totalIdx] = { userEnteredValue: { numberValue: minScore }, userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER" } };
+          minVals[totalIdx] = { userEnteredValue: { numberValue: minScore }, userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER", textRotation: { angle: 0 } } };
         }
       }
       allFormattedRows.push({ values: minVals });
     }
 
-    // Execute Batch Update on Spreadsheet
-    const batchRequests: any[] = [
+    // Set Specific Row Heights
+    batchRequests.push(
+      { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 1 }, properties: { pixelSize: 34 }, fields: "pixelSize" } },
+      { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 1, endIndex: 2 }, properties: { pixelSize: 30 }, fields: "pixelSize" } },
+      { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 2, endIndex: 3 }, properties: { pixelSize: 26 }, fields: "pixelSize" } },
+      { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 3, endIndex: 4 }, properties: { pixelSize: 12 }, fields: "pixelSize" } },
+      { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 4, endIndex: 5 }, properties: { pixelSize: 36 }, fields: "pixelSize" } }
+    );
+
+    // Push updateCells to batch
+    batchRequests.push(
       {
         updateCells: {
           range: { sheetId, startRowIndex: 0, endRowIndex: allFormattedRows.length, startColumnIndex: 0, endColumnIndex: totalCols },
           rows: allFormattedRows,
-          fields: "userEnteredValue,userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+          fields: "userEnteredValue,userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat,textRotation)"
         }
       },
       {
         updateBorders: {
           range: { sheetId, startRowIndex: 4, endRowIndex: allFormattedRows.length, startColumnIndex: 0, endColumnIndex: totalCols },
-          top: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
-          bottom: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
-          left: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
-          right: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
-          innerHorizontal: { style: "SOLID", width: 1, color: { red: 200/255, green: 200/255, blue: 200/255 } },
-          innerVertical: { style: "SOLID", width: 1, color: { red: 200/255, green: 200/255, blue: 200/255 } },
+          top: { style: "SOLID", width: 1, color: { red: 203/255, green: 213/255, blue: 225/255 } },
+          bottom: { style: "SOLID", width: 1, color: { red: 203/255, green: 213/255, blue: 225/255 } },
+          left: { style: "SOLID", width: 1, color: { red: 203/255, green: 213/255, blue: 225/255 } },
+          right: { style: "SOLID", width: 1, color: { red: 203/255, green: 213/255, blue: 225/255 } },
+          innerHorizontal: { style: "SOLID", width: 1, color: { red: 226/255, green: 232/255, blue: 240/255 } },
+          innerVertical: { style: "SOLID", width: 1, color: { red: 226/255, green: 232/255, blue: 240/255 } },
         }
       }
-    ];
+    );
 
-    // Merge title metadata rows across the table width
+    // Merge title metadata rows across table width cleanly
     if (totalCols > 1) {
       batchRequests.push(
         { mergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: totalCols }, mergeType: "MERGE_ALL" } },
