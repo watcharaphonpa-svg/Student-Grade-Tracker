@@ -987,13 +987,24 @@ export default function App() {
         })
       });
       
+      const responseText = await res.text();
+      let responseData: any = {};
+      try {
+        responseData = JSON.parse(responseText);
+      } catch (e) {
+        if (!res.ok) {
+          if (res.status === 401) {
+            throw new Error('กรุณาเข้าสู่ระบบ Google ก่อนดำเนินการซิงค์ข้อมูล');
+          }
+          throw new Error(`เซิร์ฟเวอร์ตอบกลับผิดพลาด (${res.status}): ${responseText.slice(0, 150)}`);
+        }
+      }
+
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Sync failed');
+        throw new Error(responseData.error || 'การซิงค์ข้อมูลไม่สำเร็จ');
       }
       
-      const data = await res.json();
-      setSpreadsheetUrl(data.url);
+      setSpreadsheetUrl(responseData.url);
       showAlert('สำเร็จ!', 'ซิงค์ข้อมูลและอัปเดต Google Sheets เรียบร้อยแล้ว!', 'success');
       if (isSheetsStudioOpen) {
         setIsSheetsStudioOpen(false);

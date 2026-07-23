@@ -14,7 +14,8 @@ const TOKENS_FILE = path.join(process.cwd(), "google_tokens.json");
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(cookieParser());
 
 const oauth2Client = new google.auth.OAuth2();
@@ -461,5 +462,10 @@ function getGrade(t: number) {
   if (t >= 50) return "1.0"; return "0";
 }
 
-// export default app;
+// Global Express Error Handler to prevent HTML error responses
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error("API Error:", err);
+  res.status(err.status || 500).json({ error: err.message || "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+});
+
 export default app;
