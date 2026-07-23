@@ -119,7 +119,7 @@ app.post("/api/sheets/sync", async (req, res) => {
     const client = getOAuth2Client(req);
     client.setCredentials(tokens);
     const sheets = google.sheets({ version: "v4", auth: client });
-    const { students, submissions, spreadsheetId, sheetName } = req.body;
+    const { students = [], submissions, spreadsheetId, sheetName, customSettings } = req.body;
     const drive = google.drive({ version: "v3", auth: client });
     const MASTER_FILE_NAME = "Student Grade Database";
     
@@ -143,7 +143,6 @@ app.post("/api/sheets/sync", async (req, res) => {
           targetSpreadsheetId = spreadsheet.data.spreadsheetId;
         }
       } catch (e) {
-        // Fallback or error handling
         return res.status(500).json({ error: "Failed to access Google Drive" });
       }
     }
@@ -153,7 +152,6 @@ app.post("/api/sheets/sync", async (req, res) => {
     try {
       spreadsheetData = await sheets.spreadsheets.get({ spreadsheetId: targetSpreadsheetId! });
     } catch (e) {
-      // If provided ID is invalid, try searching again or fail
       return res.status(400).json({ error: "Invalid Spreadsheet ID" });
     }
 
@@ -165,110 +163,273 @@ app.post("/api/sheets/sync", async (req, res) => {
           requests: [{ addSheet: { properties: { title: targetSheetName } } }]
         }
       });
-      // Refetch to get the new sheetId
       spreadsheetData = await sheets.spreadsheets.get({ spreadsheetId: targetSpreadsheetId! });
     }
 
-    const rows = students.map((s: any) => {
+    const sheet = spreadsheetData.data.sheets?.find(s => s.properties?.title === targetSheetName);
+    const sheetId = sheet?.properties?.sheetId || 0;
+
+    // Clear existing cells in this sheet tab first to prevent residual text
+    try {
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId: targetSpreadsheetId!,
+        range: `'${targetSheetName}'!A1:Z500`,
+      });
+    } catch (clearErr) {
+      console.warn("Notice: Clear sheet values warning:", clearErr);
+    }
+
+    // Customization extraction
+    const colOpts = customSettings?.columns || {
+      no: true, studentId: true, name: true, behavior: true, attendance: true,
+      assignment1: true, assignment2: true, assignment3: true, midterm: true,
+      final: true, total: true, grade: true, status: true
+    };
+
+    const includeDroppedOut = customSettings?.includeDroppedOut ?? false;
+    const includeFullScoreRow = customSettings?.includeFullScoreRow ?? true;
+    const includeSummaryRows = customSettings?.includeSummaryRows ?? true;
+    const institutionName = customSettings?.institutionName || "วิทยาลัยเทคโนโลยี / สถาบันการศึกษา";
+    const headerNote = customSettings?.headerNote || "แบบบันทึกคะแนนและประเมินผลการเรียนรายวิชา";
+    const customInstructor = customSettings?.customInstructor || "ครูผู้สอน";
+    const academicYear = customSettings?.academicYear || "2569";
+    const semester = customSettings?.semester || "1";
+
+    // 3. Build Column Header Row
+    const headerCols: string[] = [];
+    if (colOpts.no) headerCols.push("ลำดับ");
+    if (colOpts.studentId) headerCols.push("รหัสประจำตัว");
+    if (colOpts.name) headerCols.push("ชื่อ-นามสกุล");
+    if (colOpts.behavior) headerCols.push("จิตพิสัย");
+    if (colOpts.attendance) headerCols.push("เวลาเรียน");
+    if (colOpts.assignment1) headerCols.push("งานที่ 1 (15)");
+    if (colOpts.assignment2) headerCols.push("งานที่ 2 (15)");
+    if (colOpts.assignment3) headerCols.push("งานที่ 3 (15)");
+    if (colOpts.midterm) headerCols.push("กลางภาค (15)");
+    if (colOpts.final) headerCols.push("ปลายภาค (20)");
+    if (colOpts.total) headerCols.push("รวมคะแนน (100)");
+    if (colOpts.grade) headerCols.push("เกรด");
+    if (colOpts.status) headerCols.push("สถานะ");
+
+    const totalCols = Math.max(headerCols.length, 1);
+
+    // Build Sheet Rows Array
+    const allFormattedRows: any[] = [];
+
+    // Title Metadata Rows (Row 0, 1, 2)
+    const titleRow1 = new Array(totalCols).fill("");
+    titleRow1[0] = institutionName;
+    allFormattedRows.push({
+      values: titleRow1.map((val, idx) => ({
+        userEnteredValue: { stringValue: String(val) },
+        userEnteredFormat: {
+          backgroundColor: { red: 241/255, green: 245/255, blue: 249/255 },
+          horizontalAlignment: "CENTER",
+          verticalAlignment: "MIDDLE",
+          textFormat: { bold: true, fontSize: 13 }
+        }
+      }))
+    });
+
+    const titleRow2 = new Array(totalCols).fill("");
+    titleRow2[0] = `${headerNote} รายวิชา: ${targetSheetName}`;
+    allFormattedRows.push({
+      values: titleRow2.map((val) => ({
+        userEnteredValue: { stringValue: String(val) },
+        userEnteredFormat: {
+          backgroundColor: { red: 248/255, green: 250/255, blue: 252/255 },
+          horizontalAlignment: "CENTER",
+          verticalAlignment: "MIDDLE",
+          textFormat: { bold: true, fontSize: 11 }
+        }
+      }))
+    });
+
+    const titleRow3 = new Array(totalCols).fill("");
+    titleRow3[0] = `ภาคเรียนที่ ${semester}/${academicYear} | อาจารย์ผู้สอน: ${customInstructor}`;
+    allFormattedRows.push({
+      values: titleRow3.map((val) => ({
+        userEnteredValue: { stringValue: String(val) },
+        userEnteredFormat: {
+          backgroundColor: { red: 248/255, green: 250/255, blue: 252/255 },
+          horizontalAlignment: "CENTER",
+          verticalAlignment: "MIDDLE",
+          textFormat: { fontSize: 10 }
+        }
+      }))
+    });
+
+    // Separator Row (Row 3)
+    allFormattedRows.push({
+      values: new Array(totalCols).fill({ userEnteredValue: { stringValue: "" } })
+    });
+
+    // Column Headers Row (Row 4)
+    allFormattedRows.push({
+      values: headerCols.map((colName) => ({
+        userEnteredValue: { stringValue: colName },
+        userEnteredFormat: {
+          backgroundColor: { red: 226/255, green: 232/255, blue: 240/255 },
+          horizontalAlignment: "CENTER",
+          verticalAlignment: "MIDDLE",
+          textFormat: { bold: true, fontSize: 10 }
+        }
+      }))
+    });
+
+    // Full Score Benchmark Row
+    if (includeFullScoreRow) {
+      const fullScoreVals: any[] = [];
+      if (colOpts.no) fullScoreVals.push({ val: "-", type: "str" });
+      if (colOpts.studentId) fullScoreVals.push({ val: "-", type: "str" });
+      if (colOpts.name) fullScoreVals.push({ val: "คะแนนเต็ม", type: "str" });
+      if (colOpts.behavior) fullScoreVals.push({ val: 10, type: "num" });
+      if (colOpts.attendance) fullScoreVals.push({ val: 10, type: "num" });
+      if (colOpts.assignment1) fullScoreVals.push({ val: 15, type: "num" });
+      if (colOpts.assignment2) fullScoreVals.push({ val: 15, type: "num" });
+      if (colOpts.assignment3) fullScoreVals.push({ val: 15, type: "num" });
+      if (colOpts.midterm) fullScoreVals.push({ val: 15, type: "num" });
+      if (colOpts.final) fullScoreVals.push({ val: 20, type: "num" });
+      if (colOpts.total) fullScoreVals.push({ val: 100, type: "num" });
+      if (colOpts.grade) fullScoreVals.push({ val: "4.0", type: "str" });
+      if (colOpts.status) fullScoreVals.push({ val: "-", type: "str" });
+
+      allFormattedRows.push({
+        values: fullScoreVals.map((item) => ({
+          userEnteredValue: item.type === "num" ? { numberValue: Number(item.val) } : { stringValue: String(item.val) },
+          userEnteredFormat: {
+            backgroundColor: { red: 254/255, green: 243/255, blue: 199/255 },
+            horizontalAlignment: "CENTER",
+            verticalAlignment: "MIDDLE",
+            textFormat: { bold: true }
+          }
+        }))
+      });
+    }
+
+    // Filter Students
+    const exportStudents = includeDroppedOut ? students : students.filter((s: any) => !s.isDroppedOut);
+
+    // Student Data Rows
+    exportStudents.forEach((s: any) => {
       const a1 = (s.assignment1?.part1 || 0) + (s.assignment1?.part2 || 0) + (s.assignment1?.part3 || 0);
       const a2 = (s.assignment2?.part1 || 0) + (s.assignment2?.part2 || 0) + (s.assignment2?.part3 || 0);
       const a3 = (s.assignment3?.part1 || 0) + (s.assignment3?.part2 || 0) + (s.assignment3?.part3 || 0);
       const total = calculateTotal(s);
       const grade = getGrade(total);
-      
-      const studentFields = [
-        { value: s.no || "", type: "number" },
-        { value: s.studentId || "", type: "string" },
-        { value: s.name || "", type: "string" },
-        { value: s.behavior || 0, type: "number" },
-        { value: s.attendance || 0, type: "number" },
-        { value: a1, type: "number", fail: a1 === 0 },
-        { value: a2, type: "number", fail: a2 === 0 },
-        { value: a3, type: "number", fail: a3 === 0 },
-        { value: s.midterm || 0, type: "number", fail: s.midterm === 0 },
-        { value: s.final || 0, type: "number", fail: (s.final || 0) < 10 },
-        { value: total, type: "number", bold: false },
-        { value: grade, type: "number", bold: true }
-      ];
+      const isDropped = Boolean(s.isDroppedOut);
 
-      return {
-        values: studentFields.map(f => ({
-          userEnteredValue: f.type === "number" ? { numberValue: Number(f.value) } : { stringValue: String(f.value) },
+      const studentVals: any[] = [];
+      if (colOpts.no) studentVals.push({ val: s.no || "", type: "num" });
+      if (colOpts.studentId) studentVals.push({ val: s.studentId || "", type: "str" });
+      if (colOpts.name) studentVals.push({ val: s.name || "", type: "str", align: "LEFT" });
+      if (colOpts.behavior) studentVals.push({ val: isDropped ? "-" : (s.behavior || 0), type: isDropped ? "str" : "num" });
+      if (colOpts.attendance) studentVals.push({ val: isDropped ? "-" : (s.attendance || 0), type: isDropped ? "str" : "num" });
+      if (colOpts.assignment1) studentVals.push({ val: isDropped ? "-" : a1, type: isDropped ? "str" : "num" });
+      if (colOpts.assignment2) studentVals.push({ val: isDropped ? "-" : a2, type: isDropped ? "str" : "num" });
+      if (colOpts.assignment3) studentVals.push({ val: isDropped ? "-" : a3, type: isDropped ? "str" : "num" });
+      if (colOpts.midterm) studentVals.push({ val: isDropped ? "-" : (s.midterm || 0), type: isDropped ? "str" : "num" });
+      if (colOpts.final) studentVals.push({ val: isDropped ? "-" : (s.final || 0), type: isDropped ? "str" : "num" });
+      if (colOpts.total) studentVals.push({ val: isDropped ? "-" : total, type: isDropped ? "str" : "num", bold: true });
+      if (colOpts.grade) studentVals.push({ val: isDropped ? "-" : grade, type: "str", bold: true });
+      if (colOpts.status) studentVals.push({ val: isDropped ? "จำหน่ายออก" : "ปกติ", type: "str" });
+
+      allFormattedRows.push({
+        values: studentVals.map((item) => ({
+          userEnteredValue: item.type === "num" ? { numberValue: Number(item.val) } : { stringValue: String(item.val) },
           userEnteredFormat: {
-            backgroundColor: f.fail ? { red: 1, green: 0, blue: 0 } : undefined,
-            horizontalAlignment: "CENTER",
+            backgroundColor: isDropped ? { red: 254/255, green: 226/255, blue: 226/255 } : { red: 1, green: 1, blue: 1 },
+            horizontalAlignment: item.align || "CENTER",
             verticalAlignment: "MIDDLE",
-            textFormat: { bold: f.bold || false }
+            textFormat: { bold: item.bold || false, color: isDropped ? { red: 190/255, green: 18/255, blue: 60/255 } : undefined }
           }
         }))
-      };
+      });
     });
 
-    const headerData = [
-      ["", "", "", "", "", "งานที่ 1", "งานที่ 2", "งานที่ 3", "", "", "", ""],
-      ["เลขที่", "รหัสนักศึกษา", "ชื่อ-นามสกุล", "พฤติกรรม", "การมาเรียน", "รวม 15 คะแนน", "รวม 15 คะแนน", "รวม 15 คะแนน", "สอบกลางภาค", "สอบปลายภาค", "รวม 100 คะแนน", "เกรดเฉลี่ย"],
-      ["", "", "", "10", "10", "", "", "", "15", "20", "", ""]
+    // Summary Rows
+    if (includeSummaryRows && exportStudents.filter((s: any) => !s.isDroppedOut).length > 0) {
+      const activeOnly = exportStudents.filter((s: any) => !s.isDroppedOut);
+      const totals = activeOnly.map((s: any) => calculateTotal(s));
+      const avg = (totals.reduce((a: number, b: number) => a + b, 0) / activeOnly.length).toFixed(2);
+      const maxScore = Math.max(...totals);
+      const minScore = Math.min(...totals);
+
+      // Blank separator
+      allFormattedRows.push({
+        values: new Array(totalCols).fill({ userEnteredValue: { stringValue: "" } })
+      });
+
+      const avgVals = new Array(totalCols).fill({ userEnteredValue: { stringValue: "" } });
+      avgVals[0] = { userEnteredValue: { stringValue: "คะแนนเฉลี่ย (Average)" }, userEnteredFormat: { textFormat: { bold: true } } };
+      if (colOpts.total) {
+        const totalIdx = headerCols.indexOf("รวมคะแนน (100)");
+        if (totalIdx !== -1) {
+          avgVals[totalIdx] = { userEnteredValue: { numberValue: Number(avg) }, userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER" } };
+        }
+      }
+      allFormattedRows.push({ values: avgVals });
+
+      const maxVals = new Array(totalCols).fill({ userEnteredValue: { stringValue: "" } });
+      maxVals[0] = { userEnteredValue: { stringValue: "คะแนนสูงสุด (Max)" }, userEnteredFormat: { textFormat: { bold: true } } };
+      if (colOpts.total) {
+        const totalIdx = headerCols.indexOf("รวมคะแนน (100)");
+        if (totalIdx !== -1) {
+          maxVals[totalIdx] = { userEnteredValue: { numberValue: maxScore }, userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER" } };
+        }
+      }
+      allFormattedRows.push({ values: maxVals });
+
+      const minVals = new Array(totalCols).fill({ userEnteredValue: { stringValue: "" } });
+      minVals[0] = { userEnteredValue: { stringValue: "คะแนนต่ำสุด (Min)" }, userEnteredFormat: { textFormat: { bold: true } } };
+      if (colOpts.total) {
+        const totalIdx = headerCols.indexOf("รวมคะแนน (100)");
+        if (totalIdx !== -1) {
+          minVals[totalIdx] = { userEnteredValue: { numberValue: minScore }, userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER" } };
+        }
+      }
+      allFormattedRows.push({ values: minVals });
+    }
+
+    // Execute Batch Update on Spreadsheet
+    const batchRequests: any[] = [
+      {
+        updateCells: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: allFormattedRows.length, startColumnIndex: 0, endColumnIndex: totalCols },
+          rows: allFormattedRows,
+          fields: "userEnteredValue,userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+        }
+      },
+      {
+        updateBorders: {
+          range: { sheetId, startRowIndex: 4, endRowIndex: allFormattedRows.length, startColumnIndex: 0, endColumnIndex: totalCols },
+          top: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
+          bottom: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
+          left: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
+          right: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
+          innerHorizontal: { style: "SOLID", width: 1, color: { red: 200/255, green: 200/255, blue: 200/255 } },
+          innerVertical: { style: "SOLID", width: 1, color: { red: 200/255, green: 200/255, blue: 200/255 } },
+        }
+      }
     ];
 
-    const sheet = spreadsheetData.data.sheets?.find(s => s.properties?.title === targetSheetName);
-    const sheetId = sheet?.properties?.sheetId || 0;
+    // Merge title metadata rows across the table width
+    if (totalCols > 1) {
+      batchRequests.push(
+        { mergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: totalCols }, mergeType: "MERGE_ALL" } },
+        { mergeCells: { range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: totalCols }, mergeType: "MERGE_ALL" } },
+        { mergeCells: { range: { sheetId, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: totalCols }, mergeType: "MERGE_ALL" } }
+      );
+    }
 
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: targetSpreadsheetId!,
-      requestBody: {
-        requests: [
-          {
-            updateCells: {
-              range: { sheetId, startRowIndex: 1, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 12 },
-              rows: headerData.map((rowData, rIdx) => ({
-                values: rowData.map((cellValue, cIdx) => ({
-                  userEnteredValue: { stringValue: String(cellValue) },
-                  userEnteredFormat: {
-                    backgroundColor: 
-                      (cIdx <= 2) ? { red: 249/255, green: 203/255, blue: 156/255 } : // Peach
-                      (cIdx === 11) ? { red: 1, green: 1, blue: 0 } : // Yellow
-                      { red: 1, green: 1, blue: 1 }, // White
-                    horizontalAlignment: "CENTER",
-                    verticalAlignment: "MIDDLE",
-                    textFormat: { bold: true },
-                    textRotation: (rIdx === 1 && (cIdx === 0 || cIdx === 1 || cIdx === 3 || cIdx === 4 || cIdx === 8 || cIdx === 9 || cIdx === 10 || cIdx === 11)) ? { angle: 90 } : undefined
-                  }
-                }))
-              })),
-              fields: "userEnteredValue,userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat,textRotation)"
-            }
-          },
-          {
-            updateCells: {
-              range: { sheetId, startRowIndex: 4, endRowIndex: 4 + students.length, startColumnIndex: 0, endColumnIndex: 12 },
-              rows: rows,
-              fields: "userEnteredValue,userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-          },
-          {
-            updateBorders: {
-              range: { sheetId, startRowIndex: 1, endRowIndex: 4 + students.length, startColumnIndex: 0, endColumnIndex: 12 },
-              top: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
-              bottom: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
-              left: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
-              right: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
-              innerHorizontal: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
-              innerVertical: { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } },
-            }
-          },
-          {
-            updateDimensionProperties: {
-              range: { sheetId, dimension: "COLUMNS", startIndex: 2, endIndex: 3 },
-              properties: { pixelSize: 250 },
-              fields: "pixelSize"
-            }
-          }
-        ]
-      }
+      requestBody: { requests: batchRequests }
     });
 
     res.json({ success: true, spreadsheetId: targetSpreadsheetId, url: `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}` });
   } catch (error: any) {
+    console.error("Sheets Sync Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
