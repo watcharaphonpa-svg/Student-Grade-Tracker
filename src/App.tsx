@@ -5,12 +5,13 @@ import {
   Loader2, Search, FileText, CheckCircle2, Clock, User, Upload, 
   BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle,
   Link, Check, MoreVertical, LogOut, FileDown, Download, FileType,
-  StickyNote, UserPlus, ArrowUpDown, UserX, UserMinus
+  StickyNote, UserPlus, ArrowUpDown, UserX, UserMinus, FileSpreadsheet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import { GoogleSheetsStudioModal } from './components/GoogleSheetsStudioModal';
 
 import { 
   collection, onSnapshot, doc, setDoc, updateDoc, 
@@ -630,6 +631,7 @@ export default function App() {
   });
   const [excelPasteInput, setExcelPasteInput] = useState('');
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
+  const [isSheetsStudioOpen, setIsSheetsStudioOpen] = useState(false);
   const [isGradingCriteriaModalOpen, setIsGradingCriteriaModalOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -966,11 +968,11 @@ export default function App() {
     }
   };
 
-  const handleSyncToSheets = async () => {
+  const handleSyncToSheets = async (customSettings?: any) => {
     setIsSyncing(true);
     const currentSubject = appData.subjects.find(s => s.id === selectedSubjectId);
     const currentClass = appData.classRooms.find(c => c.id === selectedClassId);
-    const courseTitle = `${currentSubject?.name || 'Unknown'} - ${currentClass?.name || 'Unknown'}`;
+    const courseTitle = customSettings?.sheetName || `${currentSubject?.name || 'Unknown'} - ${currentClass?.name || 'Unknown'}`;
 
     try {
       const res = await fetch('/api/sheets/sync', {
@@ -979,7 +981,8 @@ export default function App() {
         body: JSON.stringify({ 
           students,
           submissions: appData.submissions,
-          sheetName: courseTitle
+          sheetName: courseTitle,
+          customSettings
         })
       });
       
@@ -990,7 +993,10 @@ export default function App() {
       
       const data = await res.json();
       setSpreadsheetUrl(data.url);
-      showAlert('สำเร็จ!', 'ซิงค์ข้อมูลไปยัง Google Sheets เรียบร้อยแล้ว!', 'success');
+      showAlert('สำเร็จ!', 'ซิงค์ข้อมูลและอัปเดต Google Sheets เรียบร้อยแล้ว!', 'success');
+      if (isSheetsStudioOpen) {
+        setIsSheetsStudioOpen(false);
+      }
     } catch (err) {
       console.error('Sync error:', err);
       showAlert('เกิดข้อผิดพลาด', `เกิดข้อผิดพลาดในการซิงค์: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
@@ -2031,6 +2037,18 @@ export default function App() {
                                 <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
                               </label>
 
+                              {/* Google Sheets Studio Customizer */}
+                              <button 
+                                onClick={() => {
+                                  setIsSheetsStudioOpen(true);
+                                  setIsActionsMenuOpen(false);
+                                }}
+                                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-emerald-50 text-emerald-700 text-sm transition-colors text-left group"
+                              >
+                                <FileSpreadsheet className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
+                                <span className="font-extrabold">ปรับแต่ง & ส่งออก Sheets / Excel</span>
+                              </button>
+
                               {isGoogleAuth ? (
                                 spreadsheetUrl && (
                                   <a 
@@ -2432,14 +2450,22 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => setIsSheetsStudioOpen(true)}
+                    className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-5 py-3 rounded-2xl font-extrabold text-sm transition-all shadow-lg shadow-emerald-100 active:scale-95 cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-5 h-5 text-emerald-100" />
+                    Google Sheets Studio (ปรับแต่งไฟล์/โลโก้)
+                  </button>
+
                   {isGoogleAuth && (
                     <button 
-                      onClick={handleSyncToSheets}
+                      onClick={() => handleSyncToSheets()}
                       disabled={isSyncing}
-                      className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-6 py-3 rounded-2xl font-bold transition-all active:scale-95 disabled:opacity-50"
+                      className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                     >
-                      {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CloudCheck className="w-5 h-5 text-indigo-500" />}
-                      อัปเดต Google Sheets
+                      {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CloudCheck className="w-5 h-5 text-emerald-600" />}
+                      ซิงค์Sheets
                     </button>
                   )}
                 </div>
@@ -5233,6 +5259,20 @@ export default function App() {
           <p style={{ marginRight: '40px' }}>อาจารย์ผู้สอน</p>
         </div>
       </div>
+
+      {/* Google Sheets Studio Customizer Modal */}
+      <GoogleSheetsStudioModal
+        isOpen={isSheetsStudioOpen}
+        onClose={() => setIsSheetsStudioOpen(false)}
+        students={students}
+        currentSubject={appData.subjects.find(s => s.id === selectedSubjectId)}
+        currentClass={appData.classRooms.find(c => c.id === selectedClassId)}
+        teacherName={user?.displayName || 'ครูผู้สอน'}
+        isGoogleAuth={isGoogleAuth}
+        spreadsheetUrl={spreadsheetUrl}
+        onSyncSheets={handleSyncToSheets}
+        showAlert={showAlert}
+      />
     </div>
   );
 }
