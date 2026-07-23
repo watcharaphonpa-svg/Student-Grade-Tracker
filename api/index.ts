@@ -317,7 +317,7 @@ app.post("/api/sheets/sync", async (req, res) => {
           horizontalAlignment: "CENTER",
           verticalAlignment: "MIDDLE",
           textRotation: { angle: 0 },
-          textFormat: { bold: false, fontSize: 9.5, foregroundColor: { red: 51/255, green: 65/255, blue: 85/255 } }
+          textFormat: { bold: false, fontSize: 9, foregroundColor: { red: 51/255, green: 65/255, blue: 85/255 } }
         }
       }))
     });
