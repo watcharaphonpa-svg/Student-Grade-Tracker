@@ -5,7 +5,8 @@ import {
   Loader2, Search, FileText, CheckCircle2, Clock, User, Upload, 
   BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle,
   Link, Check, MoreVertical, LogOut, FileDown, Download, FileType,
-  StickyNote, UserPlus, ArrowUpDown, UserX, UserMinus, FileSpreadsheet
+  StickyNote, UserPlus, ArrowUpDown, UserX, UserMinus, FileSpreadsheet,
+  Award, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import jsPDF from 'jspdf';
@@ -3884,6 +3885,92 @@ export default function App() {
 
                   {/* Summary Bento Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                    {/* Exam Scores Card (คะแนนสอบกลางภาค & ปลายภาค) */}
+                    <div className="md:col-span-12 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-200 shadow-xl space-y-6">
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                          <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                            <GraduationCap className="w-6 h-6" />
+                          </div>
+                          คะแนนสอบประเมินผล
+                        </h3>
+                        <span className="text-xs font-extrabold text-slate-500 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
+                          รวมคะแนนสอบ {(foundStudent.midterm || 0) + (foundStudent.final || 0)} / 35 คะแนน
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Midterm Exam Card */}
+                        <div className={`p-6 md:p-8 rounded-[2.5rem] border-2 transition-all relative overflow-hidden ${
+                          (foundStudent.midterm || 0) < 7 
+                            ? 'bg-rose-50/70 border-rose-300 shadow-lg shadow-rose-100/60' 
+                            : 'bg-slate-50/70 border-slate-200 hover:border-indigo-200'
+                        }`}>
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className={`p-2.5 rounded-2xl ${ (foundStudent.midterm || 0) < 7 ? 'bg-rose-600 text-white' : 'bg-indigo-600 text-white' }`}>
+                                <Award className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Midterm Exam</p>
+                                <h4 className="text-lg font-black text-slate-800">คะแนนสอบกลางภาค</h4>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className={`text-4xl font-black ${ (foundStudent.midterm || 0) < 7 ? 'text-rose-600' : 'text-indigo-600' }`}>
+                                {foundStudent.midterm || 0}
+                              </span>
+                              <span className="text-xs font-bold text-slate-400 ml-1">/ 15</span>
+                            </div>
+                          </div>
+
+                          {/* Warning logic for Midterm < 7 */}
+                          {(foundStudent.midterm || 0) < 7 ? (
+                            <div className="mt-4 p-4 bg-rose-500 text-white rounded-2xl shadow-md space-y-1.5">
+                              <div className="flex items-center gap-2 font-black text-xs">
+                                <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />
+                                <span>คำเตือน: คะแนนสอบกลางภาคต่ำกว่าเกณฑ์!</span>
+                              </div>
+                              <p className="text-xs font-medium leading-relaxed opacity-95">
+                                คุณได้คะแนนสอบกลางภาค {foundStudent.midterm || 0} คะแนน (ต่ำกว่าเกณฑ์ขั้นต่ำ 7 คะแนน) กรุณาติดต่อครูผู้สอนเพื่อขอคำแนะนำและดำเนินการสอบซ่อมเสริม
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200/80 rounded-2xl flex items-center gap-2 text-emerald-700 text-xs font-bold">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span>ผ่านเกณฑ์การประเมินสอบกลางภาค (ผ่านเกณฑ์ขั้นต่ำ 7 คะแนน)</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Final Exam Card */}
+                        <div className="p-6 md:p-8 rounded-[2.5rem] border-2 border-slate-200 bg-slate-50/70 hover:border-indigo-200 transition-all">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2.5 rounded-2xl bg-teal-600 text-white">
+                                <GraduationCap className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Final Exam</p>
+                                <h4 className="text-lg font-black text-slate-800">คะแนนสอบปลายภาค</h4>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-4xl font-black text-teal-600">
+                                {foundStudent.final || 0}
+                              </span>
+                              <span className="text-xs font-bold text-slate-400 ml-1">/ 20</span>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 p-3.5 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between text-xs text-slate-600 font-bold">
+                            <span>คะแนนเต็มการสอบปลายภาค: 20 คะแนน</span>
+                            <span className="text-teal-600 font-black">{Math.round(((foundStudent.final || 0) / 20) * 100)}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Individual Exercises Card */}
                     <div className="md:col-span-8 bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl space-y-8">
                        <div className="flex items-center justify-between">
