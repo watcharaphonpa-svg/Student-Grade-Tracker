@@ -715,7 +715,8 @@ export default function App() {
   const [isExpanded, setIsExpanded] = useState<Record<string, boolean>>({});
   const [isGoogleAuth, setIsGoogleAuth] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [spreadsheetUrl, setSpreadsheetUrl] = useState<string | null>(null);
+  const [spreadsheetId, setSpreadsheetId] = useState<string | null>(() => localStorage.getItem('google_spreadsheet_id'));
+  const [spreadsheetUrl, setSpreadsheetUrl] = useState<string | null>(() => localStorage.getItem('google_spreadsheet_url'));
   const [view, setView] = useState<'teacher' | 'student'>('teacher');
   const [isLockedStudentView, setIsLockedStudentView] = useState(false);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
@@ -976,6 +977,9 @@ export default function App() {
     const courseTitle = customSettings?.sheetName || `${currentSubject?.name || 'Unknown'} - ${currentClass?.name || 'Unknown'}`;
 
     try {
+      const activeSpreadsheetId = customSettings?.targetSpreadsheetUrl ? undefined : (customSettings?.spreadsheetId || spreadsheetId);
+      const activeSpreadsheetUrl = customSettings?.targetSpreadsheetUrl || customSettings?.spreadsheetUrl || spreadsheetUrl;
+
       const res = await fetch('/api/sheets/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -983,6 +987,8 @@ export default function App() {
           students,
           submissions: appData.submissions,
           sheetName: courseTitle,
+          spreadsheetId: activeSpreadsheetId || undefined,
+          spreadsheetUrl: activeSpreadsheetUrl || undefined,
           customSettings
         })
       });
@@ -1004,7 +1010,15 @@ export default function App() {
         throw new Error(responseData.error || 'การซิงค์ข้อมูลไม่สำเร็จ');
       }
       
-      setSpreadsheetUrl(responseData.url);
+      if (responseData.spreadsheetId) {
+        setSpreadsheetId(responseData.spreadsheetId);
+        localStorage.setItem('google_spreadsheet_id', responseData.spreadsheetId);
+      }
+      if (responseData.url) {
+        setSpreadsheetUrl(responseData.url);
+        localStorage.setItem('google_spreadsheet_url', responseData.url);
+      }
+      
       showAlert('สำเร็จ!', 'ซิงค์ข้อมูลและอัปเดต Google Sheets เรียบร้อยแล้ว!', 'success');
       if (isSheetsStudioOpen) {
         setIsSheetsStudioOpen(false);
@@ -5367,6 +5381,7 @@ export default function App() {
         currentClass={appData.classRooms.find(c => c.id === selectedClassId)}
         teacherName={user?.displayName || 'ครูผู้สอน'}
         isGoogleAuth={isGoogleAuth}
+        spreadsheetId={spreadsheetId}
         spreadsheetUrl={spreadsheetUrl}
         onSyncSheets={handleSyncToSheets}
         showAlert={showAlert}

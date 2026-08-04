@@ -43,6 +43,7 @@ interface GoogleSheetsStudioModalProps {
   currentClass?: ClassRoom;
   teacherName?: string;
   isGoogleAuth: boolean;
+  spreadsheetId?: string | null;
   spreadsheetUrl: string | null;
   onSyncSheets: (customSettings?: any) => Promise<void>;
   showAlert: (title: string, message: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
@@ -56,6 +57,7 @@ export function GoogleSheetsStudioModal({
   currentClass,
   teacherName = 'ครูผู้สอน',
   isGoogleAuth,
+  spreadsheetId,
   spreadsheetUrl,
   onSyncSheets,
   showAlert
@@ -105,9 +107,20 @@ export function GoogleSheetsStudioModal({
   const [includeSignatureBlock, setIncludeSignatureBlock] = useState<boolean>(true);
 
   // Active Tab for Modal UI
-  const [activeTab, setActiveTab] = useState<'header' | 'columns' | 'rows' | 'preview'>('header');
+  const [activeTab, setActiveTab] = useState<'header' | 'columns' | 'rows' | 'preview' | 'sync'>('header');
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isSyncingLocal, setIsSyncingLocal] = useState<boolean>(false);
+
+  // Sync Mode and Custom Target Spreadsheet URL States
+  const [syncMode, setSyncMode] = useState<'update_existing' | 'create_new'>('update_existing');
+  const [customTargetUrl, setCustomTargetUrl] = useState<string>(spreadsheetUrl || '');
+
+  // Keep customTargetUrl synced if spreadsheetUrl changes
+  React.useEffect(() => {
+    if (spreadsheetUrl && !customTargetUrl) {
+      setCustomTargetUrl(spreadsheetUrl);
+    }
+  }, [spreadsheetUrl]);
 
   // Filtered Students according to settings
   const exportStudents = React.useMemo(() => {
@@ -409,6 +422,10 @@ export function GoogleSheetsStudioModal({
       await onSyncSheets({
         fileName,
         sheetName,
+        syncMode,
+        targetSpreadsheetUrl: customTargetUrl.trim() || spreadsheetUrl || undefined,
+        spreadsheetId,
+        spreadsheetUrl,
         institutionName,
         customInstructor,
         academicYear,
@@ -511,6 +528,17 @@ export function GoogleSheetsStudioModal({
             >
               <Eye className="w-4 h-4" />
               ตัวอย่างแผ่นงาน (Live Preview)
+            </button>
+            <button
+              onClick={() => setActiveTab('sync')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'sync'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-100 font-extrabold'
+                  : 'text-slate-600 hover:bg-white hover:text-slate-800'
+              }`}
+            >
+              <Cloud className="w-4 h-4" />
+              ตั้งค่าซิงค์ & ไฟล์เป้าหมาย
             </button>
           </div>
 
@@ -981,6 +1009,125 @@ export function GoogleSheetsStudioModal({
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 5: SYNC MODE & TARGET GOOGLE SHEET */}
+            {activeTab === 'sync' && (
+              <div className="space-y-6">
+                <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-5 flex items-start gap-4">
+                  <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-md shrink-0">
+                    <Cloud className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-black text-emerald-900">
+                      ตั้งค่าการเขียนทับ / อัปเดตไฟล์ Google Sheets
+                    </h4>
+                    <p className="text-xs text-emerald-700 leading-relaxed">
+                      คุณสามารถเลือกได้ว่าจะให้อัปเดต/เขียนทับลงในไฟล์ Google Sheet เดิมโดยไม่ต้องสร้างไฟล์ใหม่ซ้ำซ้อน
+                      หรือต้องการสร้างเป็นไฟล์ใหม่ใน Google Drive
+                    </p>
+                  </div>
+                </div>
+
+                {/* Sync Mode Selector */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                  <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">
+                    เลือกรูปแบบการซิงค์ข้อมูล
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <label
+                      onClick={() => setSyncMode('update_existing')}
+                      className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                        syncMode === 'update_existing'
+                          ? 'border-emerald-600 bg-emerald-50/30 shadow-sm'
+                          : 'border-slate-200 hover:border-slate-300 bg-slate-50/50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="syncMode"
+                        checked={syncMode === 'update_existing'}
+                        onChange={() => setSyncMode('update_existing')}
+                        className="mt-1 accent-emerald-600"
+                      />
+                      <div>
+                        <div className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                          <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+                          อัปเดตไฟล์เดิมที่มีอยู่ (เขียนทับ)
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                          นำข้อมูลล่าสุดไปเขียนทับแผ่นงานใน Google Sheet เดิม เพื่อป้องกันการสร้างไฟล์ซ้ำซ้อน
+                        </p>
+                      </div>
+                    </label>
+
+                    <label
+                      onClick={() => setSyncMode('create_new')}
+                      className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                        syncMode === 'create_new'
+                          ? 'border-emerald-600 bg-emerald-50/30 shadow-sm'
+                          : 'border-slate-200 hover:border-slate-300 bg-slate-50/50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="syncMode"
+                        checked={syncMode === 'create_new'}
+                        onChange={() => setSyncMode('create_new')}
+                        className="mt-1 accent-emerald-600"
+                      />
+                      <div>
+                        <div className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-teal-600" />
+                          สร้างไฟล์ใหม่ใน Google Drive
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                          ระบบจะสร้างไฟล์ Google Sheet เล่มใหม่แยกต่างหากขึ้นมาใหม่ใน Google Drive
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Target Spreadsheet Link & ID */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">
+                        ลิงก์ Google Sheets เป้าหมาย
+                      </h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        ระบบจะจำลิงก์ไฟล์ Google Sheet ล่าสุดให้อัตโนมัติ หรือท่านสามารถวางลิงก์ Google Sheet เดิมที่ต้องการให้เขียนทับได้
+                      </p>
+                    </div>
+                    {customTargetUrl && (
+                      <a
+                        href={customTargetUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        เปิด Google Sheet
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={customTargetUrl}
+                      onChange={(e) => setCustomTargetUrl(e.target.value)}
+                      placeholder="เช่น https://docs.google.com/spreadsheets/d/1SjGRt2ksMMc2dZMZ5GqPh1shOVu380fwDhp9T-CUV14/edit"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                    />
+                    <p className="text-[10px] text-slate-400 italic">
+                      * หากช่องนี้มีลิงก์อยู่ ระบบจะนำข้อมูลไปอัปเดตลงในไฟล์ดังกล่าวโดยตรง
+                    </p>
+                  </div>
                 </div>
               </div>
             )}

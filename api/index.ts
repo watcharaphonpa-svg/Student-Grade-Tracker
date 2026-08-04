@@ -119,19 +119,43 @@ app.post("/api/sheets/sync", async (req, res) => {
     const client = getOAuth2Client(req);
     client.setCredentials(tokens);
     const sheets = google.sheets({ version: "v4", auth: client });
-    const { students = [], submissions, spreadsheetId, sheetName, customSettings } = req.body;
+    const { students = [], submissions, spreadsheetId, spreadsheetUrl, sheetName, customSettings } = req.body;
     const drive = google.drive({ version: "v3", auth: client });
-    const MASTER_FILE_NAME = "Student Grade Database";
+    const MASTER_FILE_NAME = customSettings?.fileName || "Student Grade Database";
+
+    // Helper to extract clean spreadsheet ID from URL or ID string
+    const extractId = (val?: string): string | null => {
+      if (!val || typeof val !== 'string') return null;
+      const clean = val.trim();
+      const match = clean.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      if (match) return match[1];
+      if (/^[a-zA-Z0-9-_]{15,}$/.test(clean)) return clean;
+      return null;
+    };
     
-    let targetSpreadsheetId = spreadsheetId;
-    let targetSheetName = sheetName || "Sheet1";
+    let targetSpreadsheetId = extractId(spreadsheetId) || 
+                              extractId(spreadsheetUrl) || 
+                              extractId(customSettings?.spreadsheetId) || 
+                              extractId(customSettings?.spreadsheetUrl) || 
+                              extractId(customSettings?.targetSpreadsheetUrl);
+
+    let targetSheetName = sheetName || customSettings?.sheetName || "Sheet1";
+    const syncMode = customSettings?.syncMode || "update_existing";
 
     // 1. Find or Create Master Spreadsheet
-    if (!targetSpreadsheetId) {
+    if (syncMode === "create_new") {
+      const spreadsheet = await sheets.spreadsheets.create({
+        requestBody: { properties: { title: MASTER_FILE_NAME } },
+      });
+      targetSpreadsheetId = spreadsheet.data.spreadsheetId;
+    } else if (!targetSpreadsheetId) {
       try {
+        // Search Drive for existing file with matching fileName or default "Student Grade Database"
+        const escapedName = MASTER_FILE_NAME.replace(/'/g, "\\'");
         const searchRes = await drive.files.list({
-          q: `name = '${MASTER_FILE_NAME}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
-          fields: "files(id, name)",
+          q: `(name = '${escapedName}' or name = 'Student Grade Database') and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+          orderBy: "createdTime desc",
+          fields: "files(id, name, createdTime)",
         });
         const existingFile = searchRes.data.files?.[0];
         if (existingFile) {
@@ -143,6 +167,7 @@ app.post("/api/sheets/sync", async (req, res) => {
           targetSpreadsheetId = spreadsheet.data.spreadsheetId;
         }
       } catch (e) {
+        console.error("Drive search error:", e);
         return res.status(500).json({ error: "Failed to access Google Drive" });
       }
     }
