@@ -195,11 +195,10 @@ app.post("/api/sheets/sync", async (req, res) => {
               textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0, green: 0, blue: 0 } },
               textRotation: { angle: 0 },
               horizontalAlignment: "CENTER",
-              verticalAlignment: "MIDDLE",
-              wrapStrategy: "OVERFLOW"
+              verticalAlignment: "MIDDLE"
             }
           },
-          fields: "userEnteredFormat(backgroundColor,textFormat,textRotation,horizontalAlignment,verticalAlignment,wrapStrategy)"
+          fields: "userEnteredFormat(backgroundColor,textFormat,textRotation,horizontalAlignment,verticalAlignment)"
         }
       },
       {
