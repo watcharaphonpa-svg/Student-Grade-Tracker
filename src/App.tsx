@@ -6,7 +6,7 @@ import {
   BookOpen, Settings, X, Menu, LayoutDashboard, Monitor, AlertCircle,
   Link, Check, MoreVertical, LogOut, FileDown, Download, FileType,
   StickyNote, UserPlus, ArrowUpDown, UserX, UserMinus, FileSpreadsheet,
-  Award, AlertTriangle
+  Award, AlertTriangle, GripVertical, Move, ArrowLeft, ArrowRight, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import jsPDF from 'jspdf';
@@ -722,6 +722,91 @@ export default function App() {
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isTabsCollapsed, setIsTabsCollapsed] = useState(false);
+
+  // Drag and Drop Course Cards Reordering State
+  const [courseCardOrder, setCourseCardOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('course_card_custom_order');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [draggedCourseIndex, setDraggedCourseIndex] = useState<number | null>(null);
+  const [dragOverCourseIndex, setDragOverCourseIndex] = useState<number | null>(null);
+
+  const orderedActiveCourses = useMemo(() => {
+    const raw = appData.subjects.flatMap(subject => {
+      const hasIdsField = Array.isArray(subject.classroomIds);
+      const subjectClassrooms = hasIdsField
+        ? appData.classRooms.filter(c => subject.classroomIds!.includes(c.id))
+        : appData.classRooms;
+      return subjectClassrooms.map(classroom => ({ subject, classroom }));
+    });
+
+    if (courseCardOrder.length === 0) return raw;
+
+    const map = new Map<string, { subject: Subject; classroom: ClassRoom }>();
+    raw.forEach(item => map.set(`${item.subject.id}-${item.classroom.id}`, item));
+
+    const result: { subject: Subject; classroom: ClassRoom }[] = [];
+    courseCardOrder.forEach(key => {
+      if (map.has(key)) {
+        result.push(map.get(key)!);
+        map.delete(key);
+      }
+    });
+
+    map.forEach(item => result.push(item));
+    return result;
+  }, [appData.subjects, appData.classRooms, courseCardOrder]);
+
+  const moveCourseCard = (currentIndex: number, direction: 'prev' | 'next') => {
+    const targetIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= orderedActiveCourses.length) return;
+
+    const newCourses = [...orderedActiveCourses];
+    const [moved] = newCourses.splice(currentIndex, 1);
+    newCourses.splice(targetIndex, 0, moved);
+
+    const newKeys = newCourses.map(c => `${c.subject.id}-${c.classroom.id}`);
+    setCourseCardOrder(newKeys);
+    localStorage.setItem('course_card_custom_order', JSON.stringify(newKeys));
+  };
+
+  const handleDragStartCourse = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index.toString());
+    setDraggedCourseIndex(index);
+  };
+
+  const handleDragOverCourse = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverCourseIndex !== index) {
+      setDragOverCourseIndex(index);
+    }
+  };
+
+  const handleDropCourse = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedCourseIndex === null || draggedCourseIndex === targetIndex) {
+      setDraggedCourseIndex(null);
+      setDragOverCourseIndex(null);
+      return;
+    }
+
+    const newCourses = [...orderedActiveCourses];
+    const [movedItem] = newCourses.splice(draggedCourseIndex, 1);
+    newCourses.splice(targetIndex, 0, movedItem);
+
+    const newOrderKeys = newCourses.map(item => `${item.subject.id}-${item.classroom.id}`);
+    setCourseCardOrder(newOrderKeys);
+    localStorage.setItem('course_card_custom_order', JSON.stringify(newOrderKeys));
+
+    setDraggedCourseIndex(null);
+    setDragOverCourseIndex(null);
+  };
 
   // Materials Form States
   const [newMaterialTitle, setNewMaterialTitle] = useState('');
@@ -2323,10 +2408,31 @@ export default function App() {
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
                   <div className="space-y-1 text-left">
-                    <h2 className="text-3xl font-black text-slate-800">รายวิชาทั้งหมด</h2>
-                    <p className="text-slate-400 text-sm font-medium">เลือกวิชาและชั้นเรียนด้านล่าง เพื่อเข้าจัดการบันทึกคะแนน สื่อการสอน เช็คชื่อ หรือการบ้าน</p>
+                    <h2 className="text-3xl font-black text-slate-800 flex items-center gap-3">
+                      รายวิชาทั้งหมด
+                      {orderedActiveCourses.length > 1 && (
+                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full flex items-center gap-1.5">
+                          <Move className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+                          ลากดึงสลับตำแหน่งได้
+                        </span>
+                      )}
+                    </h2>
+                    <p className="text-slate-400 text-sm font-medium">เลือกวิชาและชั้นเรียนด้านล่าง เพื่อเข้าจัดการบันทึกคะแนน สื่อการสอน เช็คชื่อ หรือการบ้าน (สามารถคลิกลากย้ายการ์ดวิชาเพื่อจัดลำดับได้)</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
+                    {courseCardOrder.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setCourseCardOrder([]);
+                          localStorage.removeItem('course_card_custom_order');
+                        }}
+                        className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-3 py-2.5 rounded-xl transition-all cursor-pointer"
+                        title="คืนค่าการเรียงลำดับดั้งเดิม"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        รีเซ็ตการเรียงลำดับ
+                      </button>
+                    )}
                     <button 
                       onClick={() => { 
                         setManageType('subject'); 
@@ -2343,15 +2449,7 @@ export default function App() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                   {(() => {
-                    const activeCourses = appData.subjects.flatMap(subject => {
-                      const hasIdsField = Array.isArray(subject.classroomIds);
-                      const subjectClassrooms = hasIdsField
-                        ? appData.classRooms.filter(c => subject.classroomIds!.includes(c.id))
-                        : appData.classRooms;
-                      return subjectClassrooms.map(classroom => ({ subject, classroom }));
-                    });
-
-                    if (activeCourses.length === 0) {
+                    if (orderedActiveCourses.length === 0) {
                       return (
                         <div className="col-span-full py-20 text-center space-y-6">
                            <div className="w-24 h-24 bg-slate-100 rounded-[2.5rem] flex items-center justify-center mx-auto text-slate-300">
@@ -2375,21 +2473,75 @@ export default function App() {
                       );
                     }
 
-                    return activeCourses.map(({ subject, classroom }) => {
+                    return orderedActiveCourses.map(({ subject, classroom }, index) => {
                       const courseKey = `${subject.id}-${classroom.id}`;
                       const studentCount = appData.courses[courseKey]?.length || 0;
+                      const isDragging = draggedCourseIndex === index;
+                      const isDragOver = dragOverCourseIndex === index;
                       
                       return (
                         <motion.div 
                           key={courseKey}
-                          whileHover={{ y: -8, scale: 1.02 }}
-                          className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-100/50 overflow-hidden group cursor-pointer"
+                          draggable
+                          onDragStart={(e) => handleDragStartCourse(e, index)}
+                          onDragOver={(e) => handleDragOverCourse(e, index)}
+                          onDrop={(e) => handleDropCourse(e, index)}
+                          onDragEnd={() => {
+                            setDraggedCourseIndex(null);
+                            setDragOverCourseIndex(null);
+                          }}
+                          whileHover={{ y: isDragging ? 0 : -8, scale: isDragging ? 0.98 : 1.02 }}
+                          className={`bg-white rounded-[2.5rem] border transition-all duration-200 overflow-hidden group cursor-pointer relative ${
+                            isDragging 
+                              ? 'opacity-40 border-dashed border-indigo-400 scale-95 shadow-none' 
+                              : isDragOver 
+                                ? 'border-2 border-indigo-600 bg-indigo-50/20 shadow-2xl scale-[1.03] ring-4 ring-indigo-100' 
+                                : 'border-slate-200 shadow-xl shadow-slate-100/50 hover:border-indigo-300'
+                          }`}
                           onClick={() => {
                             setSelectedSubjectId(subject.id);
                             setSelectedClassId(classroom.id);
                             setTeacherTab('grades');
                           }}
                         >
+                          {/* Drag Handle Top Bar */}
+                          <div 
+                            className="bg-slate-100/80 hover:bg-indigo-50/80 px-6 py-2 border-b border-slate-100 flex items-center justify-between text-slate-400 hover:text-indigo-600 transition-colors cursor-grab active:cursor-grabbing"
+                            title="คลิกลากดึงเพื่อสลับตำแหน่งวิชานี้"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex items-center gap-1.5 text-[11px] font-bold">
+                              <GripVertical className="w-4 h-4 text-slate-400 group-hover:text-indigo-500" />
+                              <span className="text-[10px] uppercase font-black tracking-wider">ลากเพื่อย้ายตำแหน่ง ({index + 1}/{orderedActiveCourses.length})</span>
+                            </div>
+                            
+                            {/* Move Prev / Move Next Buttons */}
+                            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                disabled={index === 0}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveCourseCard(index, 'prev');
+                                }}
+                                className="p-1 rounded-lg hover:bg-white text-slate-400 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+                                title="ย้ายขึ้นก่อนหน้า"
+                              >
+                                <ArrowLeft className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                disabled={index === orderedActiveCourses.length - 1}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveCourseCard(index, 'next');
+                                }}
+                                className="p-1 rounded-lg hover:bg-white text-slate-400 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+                                title="ย้ายไปถัดไป"
+                              >
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
                           <div className="p-8 space-y-6 relative">
                             <div className="absolute top-0 right-0 -tr-12 -mt-12 w-48 h-48 bg-indigo-50/50 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity" />
                             
