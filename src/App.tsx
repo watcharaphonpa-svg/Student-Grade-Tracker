@@ -28,6 +28,18 @@ interface SubScores {
   part3: number;
 }
 
+export interface AssignmentPartConfig {
+  partCount: number; // 1, 2, or 3
+  maxScores: number[]; // e.g. [15], [7.5, 7.5], [5, 5, 5]
+  partTitles?: string[]; // e.g. ['แบบฝึกหัดที่ 1']
+}
+
+export interface SubjectAssignmentConfig {
+  assignment1?: AssignmentPartConfig;
+  assignment2?: AssignmentPartConfig;
+  assignment3?: AssignmentPartConfig;
+}
+
 interface Student {
   id: string;
   no: string;
@@ -48,6 +60,7 @@ interface Subject {
   id: string;
   name: string;
   classroomIds?: string[];
+  assignmentConfig?: SubjectAssignmentConfig;
 }
 
 interface ClassRoom {
@@ -135,10 +148,59 @@ const MAX_SCORES = {
 };
 
 // --- Helpers ---
-const calculateTotal = (student: Student): number => {
-  const a1 = (student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0);
-  const a2 = (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0);
-  const a3 = (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0);
+export const getSubjectAssignmentConfig = (subject?: Subject): {
+  assignment1: { partCount: number; maxScores: number[]; partTitles: string[] };
+  assignment2: { partCount: number; maxScores: number[]; partTitles: string[] };
+  assignment3: { partCount: number; maxScores: number[]; partTitles: string[] };
+} => {
+  const conf = subject?.assignmentConfig;
+  
+  const getPart = (key: 'assignment1' | 'assignment2' | 'assignment3', defaultStartIdx: number) => {
+    const raw = conf?.[key];
+    const partCount = Math.min(3, Math.max(1, raw?.partCount || 3));
+    
+    // Default max scores if not provided or length mismatch
+    let maxScores = raw?.maxScores;
+    if (!maxScores || maxScores.length !== partCount) {
+      if (partCount === 1) maxScores = [15];
+      else if (partCount === 2) maxScores = [7.5, 7.5];
+      else maxScores = [5, 5, 5];
+    }
+    
+    // Default part titles
+    let partTitles = raw?.partTitles;
+    if (!partTitles || partTitles.length !== partCount) {
+      partTitles = Array.from({ length: partCount }, (_, i) => `แบบฝึกหัดที่ ${defaultStartIdx + i}`);
+    }
+    
+    return { partCount, maxScores, partTitles };
+  };
+
+  const p1 = getPart('assignment1', 1);
+  const p2 = getPart('assignment2', p1.partCount + 1);
+  const p3 = getPart('assignment3', p1.partCount + p2.partCount + 1);
+
+  return {
+    assignment1: p1,
+    assignment2: p2,
+    assignment3: p3,
+  };
+};
+
+const calculateTotal = (student: Student, subject?: Subject): number => {
+  const conf = getSubjectAssignmentConfig(subject);
+  
+  const getAssignSum = (key: 'assignment1' | 'assignment2' | 'assignment3') => {
+    const s = student[key] || { part1: 0, part2: 0, part3: 0 };
+    const pCount = conf[key].partCount;
+    if (pCount === 1) return s.part1 || 0;
+    if (pCount === 2) return (s.part1 || 0) + (s.part2 || 0);
+    return (s.part1 || 0) + (s.part2 || 0) + (s.part3 || 0);
+  };
+
+  const a1 = getAssignSum('assignment1');
+  const a2 = getAssignSum('assignment2');
+  const a3 = getAssignSum('assignment3');
   
   return (
     (student.behavior || 0) +
@@ -622,6 +684,15 @@ export default function App() {
   }, [user]); // Re-run when user changes to update submission listener
 
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [isAssignmentConfigModalOpen, setIsAssignmentConfigModalOpen] = useState(false);
+  const [selectedAssignmentForCustomConfig, setSelectedAssignmentForCustomConfig] = useState<{
+    taskNum: number;
+    taskKey: 'assignment1' | 'assignment2' | 'assignment3';
+  } | null>(null);
+  const [customConfigPartCount, setCustomConfigPartCount] = useState<number>(3);
+  const [customConfigMaxScores, setCustomConfigMaxScores] = useState<number[]>([5, 5, 5]);
+  const [customConfigPartTitles, setCustomConfigPartTitles] = useState<string[]>(['แบบฝึกหัดที่ 1', 'แบบฝึกหัดที่ 2', 'แบบฝึกหัดที่ 3']);
+
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [addStudentTab, setAddStudentTab] = useState<'individual' | 'file' | 'excel'>('individual');
   const [singleStudentInput, setSingleStudentInput] = useState({
@@ -1603,6 +1674,57 @@ export default function App() {
     });
   };
 
+  const currentSubject = appData.subjects.find(s => s.id === selectedSubjectId);
+
+  const updateSubjectAssignmentConfig = async (
+    subjectId: string,
+    assignmentKey: 'assignment1' | 'assignment2' | 'assignment3',
+    newPartCount: number,
+    customMaxScores?: number[],
+    customPartTitles?: string[]
+  ) => {
+    const subject = appData.subjects.find(s => s.id === subjectId);
+    if (!subject) return;
+
+    const currentConfigs = getSubjectAssignmentConfig(subject);
+    const safeCount = Math.min(3, Math.max(1, newPartCount));
+    
+    let defaultScores: number[];
+    if (customMaxScores && customMaxScores.length === safeCount) {
+      defaultScores = customMaxScores;
+    } else if (safeCount === 1) {
+      defaultScores = [15];
+    } else if (safeCount === 2) {
+      defaultScores = [7.5, 7.5];
+    } else {
+      defaultScores = [5, 5, 5];
+    }
+
+    let defaultTitles: string[];
+    if (customPartTitles && customPartTitles.length === safeCount) {
+      defaultTitles = customPartTitles;
+    } else {
+      const baseIdx = assignmentKey === 'assignment1' ? 1 : assignmentKey === 'assignment2' ? currentConfigs.assignment1.partCount + 1 : currentConfigs.assignment1.partCount + currentConfigs.assignment2.partCount + 1;
+      defaultTitles = Array.from({ length: safeCount }, (_, i) => `แบบฝึกหัดที่ ${baseIdx + i}`);
+    }
+
+    const currentConf = subject.assignmentConfig || {};
+
+    const newConfig: SubjectAssignmentConfig = {
+      ...currentConf,
+      [assignmentKey]: {
+        partCount: safeCount,
+        maxScores: defaultScores,
+        partTitles: defaultTitles
+      }
+    };
+
+    await setDoc(doc(db, 'subjects', subjectId), {
+      ...subject,
+      assignmentConfig: newConfig
+    }, { merge: true });
+  };
+
   const updateStudent = async (id: string, field: string, value: any) => {
     const studentRef = doc(db, 'students', id);
     const s = students.find(st => st.id === id);
@@ -1613,12 +1735,17 @@ export default function App() {
     // Handle nested assignment updates
     if (field.includes('.')) {
       const [obj, part] = field.split('.');
-      const assignmentKey = obj as keyof Student;
+      const assignmentKey = obj as 'assignment1' | 'assignment2' | 'assignment3';
       const currentAssignment = (s[assignmentKey] || { part1: 0, part2: 0, part3: 0 }) as SubScores;
       
+      const assignConfigs = getSubjectAssignmentConfig(currentSubject);
+      const conf = assignConfigs[assignmentKey];
+      const partIdx = part === 'part1' ? 0 : part === 'part2' ? 1 : 2;
+      const maxPartScore = conf.maxScores[partIdx] ?? (conf.partCount === 1 ? 15 : conf.partCount === 2 ? 7.5 : 5);
+
       updateData[assignmentKey] = {
         ...currentAssignment,
-        [part]: Math.min(5, Math.max(0, Number(value) || 0))
+        [part]: Math.min(maxPartScore, Math.max(0, Number(value) || 0))
       };
     } else {
       // Handle direct field updates
@@ -2629,6 +2756,23 @@ export default function App() {
 
                 <div className="flex items-center gap-3">
                   <button 
+                    onClick={() => {
+                      if (!currentSubject) return;
+                      const conf = getSubjectAssignmentConfig(currentSubject);
+                      setSelectedAssignmentForCustomConfig({ taskNum: 1, taskKey: 'assignment1' });
+                      setCustomConfigPartCount(conf.assignment1.partCount);
+                      setCustomConfigMaxScores(conf.assignment1.maxScores);
+                      setCustomConfigPartTitles(conf.assignment1.partTitles);
+                      setIsAssignmentConfigModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-5 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95 cursor-pointer"
+                    title="ปรับจำนวนแบบฝึกหัดต่องาน (1-3 แบบ รวม 15 คะแนน)"
+                  >
+                    <Settings className="w-4 h-4 text-indigo-600" />
+                    โครงสร้างแบบฝึกหัด (1-3 แบบ)
+                  </button>
+
+                  <button 
                     onClick={() => setIsSheetsStudioOpen(true)}
                     className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-5 py-3 rounded-2xl font-extrabold text-sm transition-all shadow-lg shadow-emerald-100 active:scale-95 cursor-pointer"
                   >
@@ -2771,7 +2915,7 @@ export default function App() {
                       <tbody className="divide-y divide-slate-100">
                         <AnimatePresence initial={false}>
                           {filteredStudents.map((student, sIdx) => {
-                            const total = calculateTotal(student);
+                            const total = calculateTotal(student, currentSubject);
                             const grade = getGrade(total);
                             const isExp = isExpanded[student.id];
                             const isDropped = Boolean(student.isDroppedOut);
@@ -2783,6 +2927,16 @@ export default function App() {
                                 'warning'
                               );
                             };
+
+                            const assignConfigs = getSubjectAssignmentConfig(currentSubject);
+                            const getSumForAssign = (key: 'assignment1' | 'assignment2' | 'assignment3') => {
+                              const sc = student[key] || { part1: 0, part2: 0, part3: 0 };
+                              const cnt = assignConfigs[key].partCount;
+                              if (cnt === 1) return sc.part1 || 0;
+                              if (cnt === 2) return (sc.part1 || 0) + (sc.part2 || 0);
+                              return (sc.part1 || 0) + (sc.part2 || 0) + (sc.part3 || 0);
+                            };
+                            const totalAssignSum = getSumForAssign('assignment1') + getSumForAssign('assignment2') + getSumForAssign('assignment3');
 
                             return (
                               <React.Fragment key={student.id}>
@@ -2886,11 +3040,7 @@ export default function App() {
                                           : 'bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 border-indigo-100'
                                       }`}
                                     >
-                                      <span className="font-mono">{isDropped ? '-' : (() => {
-                                        return (student.assignment1?.part1 || 0) + (student.assignment1?.part2 || 0) + (student.assignment1?.part3 || 0) +
-                                               (student.assignment2?.part1 || 0) + (student.assignment2?.part2 || 0) + (student.assignment2?.part3 || 0) +
-                                               (student.assignment3?.part1 || 0) + (student.assignment3?.part2 || 0) + (student.assignment3?.part3 || 0);
-                                      })()}</span>
+                                      <span className="font-mono">{isDropped ? '-' : totalAssignSum}</span>
                                       {!isDropped && (isExp ? <ChevronDown className="w-3.5 h-3.5 text-indigo-500" /> : <ChevronRight className="w-3.5 h-3.5 text-indigo-500" />)}
                                     </button>
                                   </td>
@@ -2969,28 +3119,92 @@ export default function App() {
                                           {[1, 2, 3].map((num) => {
                                             const key = `assignment${num}` as 'assignment1' | 'assignment2' | 'assignment3';
                                             const score = student[key] || { part1: 0, part2: 0, part3: 0 };
-                                            const sum = (score.part1 || 0) + (score.part2 || 0) + (score.part3 || 0);
+                                            const assignConfigs = getSubjectAssignmentConfig(currentSubject);
+                                            const conf = assignConfigs[key];
+                                            const partCount = conf.partCount;
+                                            
+                                            const activeParts = (['part1', 'part2', 'part3'] as (keyof SubScores)[]).slice(0, partCount);
+                                            const sum = activeParts.reduce((acc, p) => acc + (score[p] || 0), 0);
                                             
                                             return (
-                                              <div key={key} className="space-y-3 bg-white p-4 rounded-xl border border-indigo-100 shadow-sm">
-                                                <div className="flex justify-between items-center border-b border-indigo-50 pb-2">
-                                                  <h4 className="font-bold text-indigo-700">งานที่ {num}</h4>
-                                                  <span className="text-sm font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
-                                                    {sum} / 15
-                                                  </span>
-                                                </div>
-                                                <div className="grid grid-cols-3 gap-2">
-                                                  {['part1', 'part2', 'part3'].map((part, idx) => (
-                                                    <div key={part} className="space-y-1">
-                                                      <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">แบบฝึกหัดที่ {(num - 1) * 3 + (idx + 1)}</label>
-                                                      <EditableNumberCell 
-                                                        initialValue={score[part as keyof SubScores] || 0}
-                                                        onCommit={(val) => updateStudent(student.id, `${key}.${part}`, val)}
-                                                        max={5}
-                                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-center text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                      />
+                                              <div key={key} className="space-y-3 bg-white p-4.5 rounded-2xl border border-indigo-100/90 shadow-sm relative">
+                                                <div className="flex flex-wrap justify-between items-center border-b border-indigo-50/80 pb-2.5 gap-2">
+                                                  <div className="flex items-center gap-2">
+                                                    <h4 className="font-extrabold text-indigo-700 text-sm">งานที่ {num}</h4>
+                                                    
+                                                    {/* Quick 1-3 Exercise Segmented Selector */}
+                                                    <div className="flex items-center bg-slate-100/90 p-0.5 rounded-lg border border-slate-200/60" title="เลือกจำนวนแบบฝึกหัดต่องานนี้ (สูงสุด 3 แบบ รวม 15 คะแนน)">
+                                                      {[1, 2, 3].map(cnt => (
+                                                        <button
+                                                          key={cnt}
+                                                          type="button"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (currentSubject) {
+                                                              updateSubjectAssignmentConfig(currentSubject.id, key, cnt);
+                                                            }
+                                                          }}
+                                                          className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                                                            partCount === cnt 
+                                                              ? 'bg-indigo-600 text-white shadow-xs' 
+                                                              : 'text-slate-500 hover:text-slate-800'
+                                                          }`}
+                                                        >
+                                                          {cnt} แบบ
+                                                        </button>
+                                                      ))}
                                                     </div>
-                                                  ))}
+                                                  </div>
+
+                                                  <div className="flex items-center gap-2">
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedAssignmentForCustomConfig({ taskNum: num, taskKey: key });
+                                                        setCustomConfigPartCount(conf.partCount);
+                                                        setCustomConfigMaxScores(conf.maxScores);
+                                                        setCustomConfigPartTitles(conf.partTitles);
+                                                        setIsAssignmentConfigModalOpen(true);
+                                                      }}
+                                                      className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                                      title="ตั้งค่าคะแนนเต็มและชื่อแบบฝึกหัด"
+                                                    >
+                                                      <Settings className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <span className="text-xs font-black text-indigo-700 bg-indigo-50/90 border border-indigo-100/80 px-2 py-0.5 rounded-lg font-mono">
+                                                      {sum} / 15
+                                                    </span>
+                                                  </div>
+                                                </div>
+
+                                                {/* Dynamic Exercise Grid (1, 2, or 3 columns) */}
+                                                <div className={`grid gap-2.5 ${
+                                                  partCount === 1 ? 'grid-cols-1' : partCount === 2 ? 'grid-cols-2' : 'grid-cols-3'
+                                                }`}>
+                                                  {activeParts.map((part, idx) => {
+                                                    const maxPartScore = conf.maxScores[idx] ?? (partCount === 1 ? 15 : partCount === 2 ? 7.5 : 5);
+                                                    const partTitle = conf.partTitles[idx] || `แบบฝึกหัดที่ ${idx + 1}`;
+                                                    
+                                                    return (
+                                                      <div key={part} className="space-y-1 bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
+                                                        <div className="flex items-center justify-between gap-1">
+                                                          <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold truncate" title={partTitle}>
+                                                            {partTitle}
+                                                          </label>
+                                                          <span className="text-[9px] font-bold text-slate-400 font-mono shrink-0">
+                                                            /{maxPartScore}
+                                                          </span>
+                                                        </div>
+                                                        <EditableNumberCell 
+                                                          initialValue={score[part] || 0}
+                                                          onCommit={(val) => updateStudent(student.id, `${key}.${part}`, val)}
+                                                          max={maxPartScore}
+                                                          className="w-full bg-white border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-2 focus:ring-indigo-500 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-800 outline-none"
+                                                        />
+                                                      </div>
+                                                    );
+                                                  })}
                                                 </div>
                                               </div>
                                             );
@@ -4150,47 +4364,72 @@ export default function App() {
 
                     {/* Individual Exercises Card */}
                     <div className="md:col-span-8 bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl space-y-8">
-                       <div className="flex items-center justify-between">
-                         <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                           <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
-                             <FileText className="w-6 h-6" />
-                           </div>
-                           คะแนนแบบฝึกหัด
-                         </h3>
-                         <span className="text-sm font-bold text-slate-400 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
-                           ทั้งหมด {(foundStudent.assignment1?.part1 || 0) + (foundStudent.assignment1?.part2 || 0) + (foundStudent.assignment1?.part3 || 0) + 
-                                  (foundStudent.assignment2?.part1 || 0) + (foundStudent.assignment2?.part2 || 0) + (foundStudent.assignment2?.part3 || 0) +
-                                  (foundStudent.assignment3?.part1 || 0) + (foundStudent.assignment3?.part2 || 0) + (foundStudent.assignment3?.part3 || 0)} / 45
-                         </span>
-                       </div>
+                       {(() => {
+                         const studentMatch = matchCourseKey(foundStudent.courseKey, appData.subjects, appData.classRooms);
+                         const studentSubj = studentMatch?.subject;
+                         const studentAssignConf = getSubjectAssignmentConfig(studentSubj);
 
-                       <div className="space-y-6">
-                         {[1, 2, 3].map(num => {
-                           const key = `assignment${num}` as 'assignment1' | 'assignment2' | 'assignment3';
-                           const score = foundStudent[key] || { part1: 0, part2: 0, part3: 0 };
-                           return (
-                             <div key={num} className="bg-slate-50/50 p-6 rounded-[2.5rem] border border-slate-100/80">
-                               <div className="flex justify-between items-center mb-4 px-2">
-                                 <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">ชุดที่ {num}</p>
-                                 <div className="h-px flex-1 mx-4 bg-slate-200" />
-                                 <p className="text-sm font-black text-indigo-600">{(score.part1 || 0) + (score.part2 || 0) + (score.part3 || 0)} / 15</p>
-                               </div>
-                               <div className="grid grid-cols-3 gap-3">
-                                 {[1, 2, 3].map(pIdx => {
-                                   const pKey = `part${pIdx}` as keyof SubScores;
-                                   const exNum = (num - 1) * 3 + pIdx;
-                                   return (
-                                     <div key={pIdx} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center group hover:border-indigo-200 transition-all">
-                                       <p className="text-[9px] font-black text-slate-300 uppercase mb-2 group-hover:text-indigo-400 transition-colors">EX {exNum}</p>
-                                       <p className="text-2xl font-black text-slate-700">{score[pKey] || 0}</p>
-                                     </div>
-                                   );
-                                 })}
-                               </div>
+                         const totalExScore = [1, 2, 3].reduce((acc, num) => {
+                           const k = `assignment${num}` as 'assignment1' | 'assignment2' | 'assignment3';
+                           const sc = foundStudent[k] || { part1: 0, part2: 0, part3: 0 };
+                           const c = studentAssignConf[k];
+                           const parts = (['part1', 'part2', 'part3'] as (keyof SubScores)[]).slice(0, c.partCount);
+                           return acc + parts.reduce((pAcc, p) => pAcc + (sc[p] || 0), 0);
+                         }, 0);
+
+                         return (
+                           <>
+                             <div className="flex items-center justify-between">
+                               <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                                 <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                                   <FileText className="w-6 h-6" />
+                                 </div>
+                                 คะแนนแบบฝึกหัด
+                               </h3>
+                               <span className="text-sm font-bold text-slate-500 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
+                                 ทั้งหมด {totalExScore} / 45 คะแนน
+                               </span>
                              </div>
-                           );
-                         })}
-                       </div>
+
+                             <div className="space-y-6">
+                               {[1, 2, 3].map(num => {
+                                 const key = `assignment${num}` as 'assignment1' | 'assignment2' | 'assignment3';
+                                 const score = foundStudent[key] || { part1: 0, part2: 0, part3: 0 };
+                                 const conf = studentAssignConf[key];
+                                 const activeParts = (['part1', 'part2', 'part3'] as (keyof SubScores)[]).slice(0, conf.partCount);
+                                 const assignSum = activeParts.reduce((acc, p) => acc + (score[p] || 0), 0);
+
+                                 return (
+                                   <div key={num} className="bg-slate-50/50 p-6 rounded-[2.5rem] border border-slate-100/80">
+                                     <div className="flex justify-between items-center mb-4 px-2">
+                                       <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">ชุดที่ {num} ({conf.partCount} แบบฝึกหัด)</p>
+                                       <div className="h-px flex-1 mx-4 bg-slate-200" />
+                                       <p className="text-sm font-black text-indigo-600">{assignSum} / 15</p>
+                                     </div>
+                                     <div className={`grid gap-3 ${
+                                       conf.partCount === 1 ? 'grid-cols-1' : conf.partCount === 2 ? 'grid-cols-2' : 'grid-cols-3'
+                                     }`}>
+                                       {activeParts.map((pKey, pIdx) => {
+                                         const maxPartScore = conf.maxScores[pIdx] ?? (conf.partCount === 1 ? 15 : conf.partCount === 2 ? 7.5 : 5);
+                                         const title = conf.partTitles[pIdx] || `แบบฝึกหัดที่ ${pIdx + 1}`;
+                                         return (
+                                           <div key={pKey} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center group hover:border-indigo-200 transition-all">
+                                             <div className="flex items-center justify-between mb-2">
+                                               <p className="text-[10px] font-black text-slate-400 uppercase group-hover:text-indigo-500 transition-colors truncate">{title}</p>
+                                               <span className="text-[9px] font-bold text-slate-300 font-mono">/{maxPartScore}</span>
+                                             </div>
+                                             <p className="text-2xl font-black text-slate-700">{score[pKey] || 0}</p>
+                                           </div>
+                                         );
+                                       })}
+                                     </div>
+                                   </div>
+                                 );
+                               })}
+                             </div>
+                           </>
+                         );
+                       })()}
                     </div>
 
                     {/* Detailed Attendance Card */}
@@ -5397,6 +5636,198 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+      {/* Assignment Configuration Modal */}
+      <AnimatePresence>
+        {isAssignmentConfigModalOpen && selectedAssignmentForCustomConfig && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAssignmentConfigModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white rounded-[36px] w-full max-w-lg shadow-2xl overflow-hidden border border-white"
+            >
+              {/* Modal Header */}
+              <div className="p-7 pb-4 flex items-center justify-between border-b border-slate-100">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                    <Settings className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-800">
+                      ตั้งค่าโครงสร้างงานที่ {selectedAssignmentForCustomConfig.taskNum}
+                    </h3>
+                    <p className="text-xs text-slate-400 font-medium">ปรับจำนวนแบบฝึกหัด (1-3 แบบ) และสัดส่วนคะแนนรวม 15 คะแนน</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsAssignmentConfigModalOpen(false)}
+                  className="p-2.5 hover:bg-slate-100 rounded-2xl transition-colors text-slate-400"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-7 space-y-6">
+                {/* Exercise Count Selector */}
+                <div>
+                  <label className="block text-xs font-black text-slate-600 mb-2">
+                    เลือกจำนวนแบบฝึกหัดในงานนี้ (สูงสุด 3 แบบ)
+                  </label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[1, 2, 3].map(count => (
+                      <button
+                        key={count}
+                        type="button"
+                        onClick={() => {
+                          setCustomConfigPartCount(count);
+                          if (count === 1) {
+                            setCustomConfigMaxScores([15]);
+                            setCustomConfigPartTitles(['แบบฝึกหัดที่ 1']);
+                          } else if (count === 2) {
+                            setCustomConfigMaxScores([7.5, 7.5]);
+                            setCustomConfigPartTitles(['แบบฝึกหัดที่ 1', 'แบบฝึกหัดที่ 2']);
+                          } else {
+                            setCustomConfigMaxScores([5, 5, 5]);
+                            setCustomConfigPartTitles(['แบบฝึกหัดที่ 1', 'แบบฝึกหัดที่ 2', 'แบบฝึกหัดที่ 3']);
+                          }
+                        }}
+                        className={`p-3.5 rounded-2xl border-2 font-black text-sm flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                          customConfigPartCount === count
+                            ? 'border-indigo-600 bg-indigo-50/80 text-indigo-700 shadow-sm'
+                            : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-slate-50'
+                        }`}
+                      >
+                        <span className="text-base">{count} แบบฝึกหัด</span>
+                        <span className="text-[10px] font-medium text-slate-400">
+                          {count === 1 ? 'เต็ม 15 คะแนน' : count === 2 ? 'เฉลี่ยละ 7.5 คะแนน' : 'เฉลี่ยละ 5 คะแนน'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Score & Title Configuration */}
+                <div className="space-y-3">
+                  <label className="block text-xs font-black text-slate-600">
+                    กำหนดชื่อและคะแนนเต็มแต่ละแบบฝึกหัด (รวมกัน = 15 คะแนน)
+                  </label>
+
+                  {Array.from({ length: customConfigPartCount }).map((_, idx) => (
+                    <div key={idx} className="flex items-center gap-3 p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                      <div className="flex-1 space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400">ชื่อแบบฝึกหัด #{idx + 1}</label>
+                        <input 
+                          type="text"
+                          value={customConfigPartTitles[idx] || `แบบฝึกหัดที่ ${idx + 1}`}
+                          onChange={(e) => {
+                            const newTitles = [...customConfigPartTitles];
+                            newTitles[idx] = e.target.value;
+                            setCustomConfigPartTitles(newTitles);
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder={`แบบฝึกหัดที่ ${idx + 1}`}
+                        />
+                      </div>
+
+                      <div className="w-28 space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400">คะแนนเต็ม</label>
+                        <div className="relative">
+                          <input 
+                            type="number"
+                            step="0.5"
+                            min="0.5"
+                            max="15"
+                            value={customConfigMaxScores[idx] ?? (customConfigPartCount === 1 ? 15 : customConfigPartCount === 2 ? 7.5 : 5)}
+                            onChange={(e) => {
+                              const newScores = [...customConfigMaxScores];
+                              newScores[idx] = Number(e.target.value) || 0;
+                              setCustomConfigMaxScores(newScores);
+                            }}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-black text-center text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Live Total Sum Alert */}
+                {(() => {
+                  const currentSum = customConfigMaxScores.slice(0, customConfigPartCount).reduce((a, b) => a + Number(b || 0), 0);
+                  const isExact15 = Math.abs(currentSum - 15) < 0.01;
+
+                  return (
+                    <div className={`p-4 rounded-2xl border flex items-center justify-between ${
+                      isExact15 
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                        : 'bg-amber-50 border-amber-200 text-amber-800'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        {isExact15 ? (
+                          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                        )}
+                        <div>
+                          <p className="text-xs font-black">
+                            {isExact15 ? 'คะแนนรวมถูกต้องตามเกณฑ์' : 'คะแนนรวมต้องเท่ากับ 15 คะแนน'}
+                          </p>
+                          <p className="text-[11px] opacity-80 font-medium">เกณฑ์มาตรฐานกำหนดคะแนนรวมงานละ 15 คะแนน</p>
+                        </div>
+                      </div>
+                      <span className={`text-base font-black font-mono px-3 py-1 rounded-xl ${
+                        isExact15 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {currentSum} / 15
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-7 pt-2 flex items-center gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsAssignmentConfigModalOpen(false)}
+                  className="flex-1 py-3.5 rounded-2xl font-bold text-slate-600 hover:bg-slate-100 transition-all border border-slate-200 text-sm cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button 
+                  type="button"
+                  onClick={async () => {
+                    if (!currentSubject || !selectedAssignmentForCustomConfig) return;
+                    
+                    await updateSubjectAssignmentConfig(
+                      currentSubject.id,
+                      selectedAssignmentForCustomConfig.taskKey,
+                      customConfigPartCount,
+                      customConfigMaxScores.slice(0, customConfigPartCount),
+                      customConfigPartTitles.slice(0, customConfigPartCount)
+                    );
+
+                    showAlert('บันทึกสำเร็จ', `ปรับโครงสร้างงานที่ ${selectedAssignmentForCustomConfig.taskNum} เป็น ${customConfigPartCount} แบบฝึกหัดเรียบร้อยแล้ว`, 'success');
+                    setIsAssignmentConfigModalOpen(false);
+                  }}
+                  className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-200 active:scale-95 transition-all cursor-pointer"
+                >
+                  บันทึกการตั้งค่า
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Confirmation Modal */}
       <AnimatePresence>
         {confirmModal.isOpen && (
