@@ -627,10 +627,27 @@ export default function App() {
     materials: []
   });
 
-  const [selectedSubjectId, setSelectedSubjectId] = useState('');
-  const [selectedClassId, setSelectedClassId] = useState('');
+  const [selectedSubjectId, setSelectedSubjectId] = useState(() => {
+    return localStorage.getItem('last_selected_subject_id') || '';
+  });
+  const [selectedClassId, setSelectedClassId] = useState(() => {
+    return localStorage.getItem('last_selected_class_id') || '';
+  });
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [teacherNotes, setTeacherNotes] = useState<TeacherNote[]>([]);
+
+  // Keep localStorage in sync with selected subject & classroom
+  useEffect(() => {
+    if (selectedSubjectId) {
+      localStorage.setItem('last_selected_subject_id', selectedSubjectId);
+    }
+  }, [selectedSubjectId]);
+
+  useEffect(() => {
+    if (selectedClassId) {
+      localStorage.setItem('last_selected_class_id', selectedClassId);
+    }
+  }, [selectedClassId]);
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -645,14 +662,32 @@ export default function App() {
     const unsubSubjects = onSnapshot(collection(db, 'subjects'), (snap) => {
       const subjects = snap.docs.map(d => d.data() as Subject);
       setAppData(prev => ({ ...prev, subjects }));
-      if (!selectedSubjectId && subjects.length > 0) setSelectedSubjectId(subjects[0].id);
+      setSelectedSubjectId(prev => {
+        if (prev && subjects.some(s => s.id === prev)) {
+          return prev;
+        }
+        const saved = localStorage.getItem('last_selected_subject_id');
+        if (saved && subjects.some(s => s.id === saved)) {
+          return saved;
+        }
+        return subjects.length > 0 ? subjects[0].id : '';
+      });
     });
 
     // Classrooms
     const unsubClasses = onSnapshot(collection(db, 'classRooms'), (snap) => {
       const classRooms = snap.docs.map(d => d.data() as ClassRoom);
       setAppData(prev => ({ ...prev, classRooms }));
-      if (!selectedClassId && classRooms.length > 0) setSelectedClassId(classRooms[0].id);
+      setSelectedClassId(prev => {
+        if (prev && classRooms.some(c => c.id === prev)) {
+          return prev;
+        }
+        const saved = localStorage.getItem('last_selected_class_id');
+        if (saved && classRooms.some(c => c.id === saved)) {
+          return saved;
+        }
+        return classRooms.length > 0 ? classRooms[0].id : '';
+      });
     });
 
     // Assignments
@@ -2551,13 +2586,33 @@ export default function App() {
                   <div className="text-left">
                     <span className="text-[9px] font-black uppercase tracking-wider text-indigo-500 block leading-none mb-1">กำลังจัดการรายวิชา</span>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-extrabold text-slate-800 text-base">
-                        {appData.subjects.find(s => s.id === selectedSubjectId)?.name || 'ยังเลือกวิชาไม่ได้'}
-                      </span>
+                      <select
+                        value={selectedSubjectId}
+                        onChange={(e) => {
+                          const newSubId = e.target.value;
+                          setSelectedSubjectId(newSubId);
+                          localStorage.setItem('last_selected_subject_id', newSubId);
+                        }}
+                        className="font-extrabold text-slate-800 text-base bg-white/90 hover:bg-white border border-slate-200 rounded-xl px-2.5 py-1 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-xs transition-all"
+                      >
+                        {appData.subjects.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
                       <span className="text-slate-300">|</span>
-                      <span className="text-indigo-600 text-sm font-black bg-indigo-50/60 px-2.5 py-0.5 rounded-lg border border-indigo-100/30">
-                        ห้อง {appData.classRooms.find(c => c.id === selectedClassId)?.name || 'ยังเลือกห้องไม่ได้'}
-                      </span>
+                      <select
+                        value={selectedClassId}
+                        onChange={(e) => {
+                          const newClassId = e.target.value;
+                          setSelectedClassId(newClassId);
+                          localStorage.setItem('last_selected_class_id', newClassId);
+                        }}
+                        className="text-indigo-600 text-sm font-black bg-indigo-50/90 hover:bg-indigo-100/70 border border-indigo-200 rounded-xl px-2.5 py-1 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-xs transition-all"
+                      >
+                        {appData.classRooms.map(c => (
+                          <option key={c.id} value={c.id}>ห้อง {c.name}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -5979,13 +6034,17 @@ export default function App() {
                   onClick={async () => {
                     if (!currentSubject || !selectedAssignmentForCustomConfig) return;
                     
+                    const activeSubjectId = currentSubject.id;
                     await updateSubjectAssignmentConfig(
-                      currentSubject.id,
+                      activeSubjectId,
                       selectedAssignmentForCustomConfig.taskKey,
                       customConfigPartCount,
                       customConfigMaxScores.slice(0, customConfigPartCount),
                       customConfigPartTitles.slice(0, customConfigPartCount)
                     );
+
+                    setSelectedSubjectId(activeSubjectId);
+                    localStorage.setItem('last_selected_subject_id', activeSubjectId);
 
                     showAlert('บันทึกสำเร็จ', `ปรับโครงสร้างงานที่ ${selectedAssignmentForCustomConfig.taskNum} เป็น ${customConfigPartCount} แบบฝึกหัดเรียบร้อยแล้ว`, 'success');
                     setIsAssignmentConfigModalOpen(false);
