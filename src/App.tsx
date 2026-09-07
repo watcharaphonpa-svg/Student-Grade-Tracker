@@ -23,14 +23,18 @@ import { db, auth, signInWithGoogle } from './lib/firebase';
 
 // --- Types ---
 interface SubScores {
-  part1: number;
-  part2: number;
-  part3: number;
+  part1?: number;
+  part2?: number;
+  part3?: number;
+  part4?: number;
+  part5?: number;
+  part6?: number;
+  [key: string]: number | undefined;
 }
 
 export interface AssignmentPartConfig {
-  partCount: number; // 1, 2, or 3
-  maxScores: number[]; // e.g. [15], [7.5, 7.5], [5, 5, 5]
+  partCount: number; // 1 to 6
+  maxScores: number[]; // e.g. [3, 4, 3, 5]
   partTitles?: string[]; // e.g. ['แบบฝึกหัดที่ 1']
 }
 
@@ -157,14 +161,23 @@ export const getSubjectAssignmentConfig = (subject?: Subject): {
   
   const getPart = (key: 'assignment1' | 'assignment2' | 'assignment3', defaultStartIdx: number) => {
     const raw = conf?.[key];
-    const partCount = Math.min(3, Math.max(1, raw?.partCount || 3));
+    const partCount = Math.min(6, Math.max(1, raw?.partCount || 4));
     
     // Default max scores if not provided or length mismatch
     let maxScores = raw?.maxScores;
     if (!maxScores || maxScores.length !== partCount) {
       if (partCount === 1) maxScores = [15];
       else if (partCount === 2) maxScores = [7.5, 7.5];
-      else maxScores = [5, 5, 5];
+      else if (partCount === 3) maxScores = [5, 5, 5];
+      else if (partCount === 4) {
+        if (key === 'assignment1') maxScores = [3, 4, 3, 5];
+        else maxScores = [4, 4, 3, 4];
+      } else {
+        const each = Math.round((15 / partCount) * 10) / 10;
+        maxScores = Array(partCount).fill(each);
+        const currentSum = maxScores.slice(0, partCount - 1).reduce((a, b) => a + b, 0);
+        maxScores[partCount - 1] = Math.round((15 - currentSum) * 10) / 10;
+      }
     }
     
     // Default part titles
@@ -191,11 +204,13 @@ const calculateTotal = (student: Student, subject?: Subject): number => {
   const conf = getSubjectAssignmentConfig(subject);
   
   const getAssignSum = (key: 'assignment1' | 'assignment2' | 'assignment3') => {
-    const s = student[key] || { part1: 0, part2: 0, part3: 0 };
+    const s = student[key] || {};
     const pCount = conf[key].partCount;
-    if (pCount === 1) return s.part1 || 0;
-    if (pCount === 2) return (s.part1 || 0) + (s.part2 || 0);
-    return (s.part1 || 0) + (s.part2 || 0) + (s.part3 || 0);
+    let sum = 0;
+    for (let i = 1; i <= pCount; i++) {
+      sum += Number(s[`part${i}` as keyof SubScores] || 0);
+    }
+    return sum;
   };
 
   const a1 = getAssignSum('assignment1');
@@ -393,7 +408,7 @@ function handleGridKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (rowAttr !== null && colAttr !== null) {
       const currentCol = parseInt(colAttr, 10);
       const currentRow = parseInt(rowAttr, 10);
-      for (let step = 1; step <= 10; step++) {
+      for (let step = 1; step <= 30; step++) {
         const targetInput = container.querySelector<HTMLInputElement>(
           `input[data-row="${currentRow}"][data-col="${currentCol + step}"]:not([disabled])`
         );
@@ -421,7 +436,7 @@ function handleGridKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (rowAttr !== null && colAttr !== null) {
       const currentCol = parseInt(colAttr, 10);
       const currentRow = parseInt(rowAttr, 10);
-      for (let step = 1; step <= 10; step++) {
+      for (let step = 1; step <= 30; step++) {
         const targetInput = container.querySelector<HTMLInputElement>(
           `input[data-row="${currentRow}"][data-col="${currentCol - step}"]:not([disabled])`
         );
@@ -518,11 +533,23 @@ interface EditableNumberCellProps {
   className?: string;
   disabled?: boolean;
   onDisabledClick?: () => void;
+  highlightZero?: boolean;
   'data-row'?: number;
   'data-col'?: number;
 }
 
-function EditableNumberCell({ initialValue, onCommit, max, min = 0, className, disabled, onDisabledClick, 'data-row': dataRow, 'data-col': dataCol }: EditableNumberCellProps) {
+function EditableNumberCell({ 
+  initialValue, 
+  onCommit, 
+  max, 
+  min = 0, 
+  className, 
+  disabled, 
+  onDisabledClick, 
+  highlightZero = false,
+  'data-row': dataRow, 
+  'data-col': dataCol 
+}: EditableNumberCellProps) {
   const [value, setValue] = React.useState(initialValue !== undefined ? initialValue.toString() : '0');
 
   React.useEffect(() => {
@@ -551,7 +578,7 @@ function EditableNumberCell({ initialValue, onCommit, max, min = 0, className, d
       <div 
         onClick={onDisabledClick}
         title="นักเรียนจำหน่ายออก/พ้นสภาพ - ไม่สามารถกรอกคะแนนได้"
-        className="cursor-not-allowed select-none inline-block"
+        className="cursor-not-allowed select-none inline-block w-full"
       >
         <input
           type="text"
@@ -559,15 +586,22 @@ function EditableNumberCell({ initialValue, onCommit, max, min = 0, className, d
           value="-"
           data-row={dataRow}
           data-col={dataCol}
-          className="w-14 bg-rose-100/60 border border-rose-300 text-rose-600 rounded-lg py-1 text-center font-black outline-none cursor-not-allowed pointer-events-none"
+          className="w-full bg-rose-100/60 border border-rose-300 text-rose-600 rounded py-1 text-center font-black outline-none cursor-not-allowed pointer-events-none"
         />
       </div>
     );
   }
 
+  const num = Number(value);
+  const isZero = !disabled && (value === '' || value === '0' || num === 0);
+  const zeroStyle = (highlightZero && isZero) 
+    ? '!bg-red-600 !text-white !font-black hover:!bg-red-700 focus:!bg-red-600 focus:!text-white' 
+    : '';
+
   return (
     <input
       type="number"
+      step="0.5"
       max={max}
       min={min}
       value={value}
@@ -577,7 +611,7 @@ function EditableNumberCell({ initialValue, onCommit, max, min = 0, className, d
       onBlur={handleBlur}
       onFocus={(e) => e.target.select()}
       onKeyDown={handleKeyDown}
-      className={className}
+      className={`${className || ''} ${zeroStyle}`}
     />
   );
 }
@@ -793,6 +827,7 @@ export default function App() {
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isTabsCollapsed, setIsTabsCollapsed] = useState(false);
+  const [highlightZeroScores, setHighlightZeroScores] = useState<boolean>(true);
 
   // Drag and Drop Course Cards Reordering State
   const [courseCardOrder, setCourseCardOrder] = useState<string[]>(() => {
@@ -1687,7 +1722,7 @@ export default function App() {
     if (!subject) return;
 
     const currentConfigs = getSubjectAssignmentConfig(subject);
-    const safeCount = Math.min(3, Math.max(1, newPartCount));
+    const safeCount = Math.min(6, Math.max(1, newPartCount));
     
     let defaultScores: number[];
     if (customMaxScores && customMaxScores.length === safeCount) {
@@ -1696,8 +1731,16 @@ export default function App() {
       defaultScores = [15];
     } else if (safeCount === 2) {
       defaultScores = [7.5, 7.5];
-    } else {
+    } else if (safeCount === 3) {
       defaultScores = [5, 5, 5];
+    } else if (safeCount === 4) {
+      if (assignmentKey === 'assignment1') defaultScores = [3, 4, 3, 5];
+      else defaultScores = [4, 4, 3, 4];
+    } else {
+      const each = Math.round((15 / safeCount) * 10) / 10;
+      defaultScores = Array(safeCount).fill(each);
+      const currentSum = defaultScores.slice(0, safeCount - 1).reduce((a, b) => a + b, 0);
+      defaultScores[safeCount - 1] = Math.round((15 - currentSum) * 10) / 10;
     }
 
     let defaultTitles: string[];
@@ -1736,12 +1779,13 @@ export default function App() {
     if (field.includes('.')) {
       const [obj, part] = field.split('.');
       const assignmentKey = obj as 'assignment1' | 'assignment2' | 'assignment3';
-      const currentAssignment = (s[assignmentKey] || { part1: 0, part2: 0, part3: 0 }) as SubScores;
+      const currentAssignment = (s[assignmentKey] || {}) as SubScores;
       
       const assignConfigs = getSubjectAssignmentConfig(currentSubject);
       const conf = assignConfigs[assignmentKey];
-      const partIdx = part === 'part1' ? 0 : part === 'part2' ? 1 : 2;
-      const maxPartScore = conf.maxScores[partIdx] ?? (conf.partCount === 1 ? 15 : conf.partCount === 2 ? 7.5 : 5);
+      const partNum = parseInt(part.replace('part', ''), 10);
+      const partIdx = !isNaN(partNum) && partNum > 0 ? partNum - 1 : 0;
+      const maxPartScore = conf.maxScores[partIdx] ?? (15 / conf.partCount);
 
       updateData[assignmentKey] = {
         ...currentAssignment,
@@ -2853,442 +2897,570 @@ export default function App() {
                 </div>
 
                 {/* Filter and Title Row */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-8 pb-1">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mt-8 pb-1">
                   <div>
                     <h3 className="text-lg font-bold text-slate-800">รายชื่อบันทึกคะแนนในชั้นเรียน</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">รวมเกรดและคะแนนกิจกรรม ทั้งหมดในภาคเรียน</p>
+                    <p className="text-xs text-slate-500 mt-0.5">ตารางกรอกคะแนนแบบรวดเร็ว รองรับปุ่มลูกศรและปุ่ม Enter</p>
                   </div>
-                  <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 max-w-full overflow-x-auto self-start sm:self-auto">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Highlight 0 toggle */}
                     <button
-                      onClick={() => setStudentFilter('all')}
-                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all duration-205 ${
-                        studentFilter === 'all'
-                          ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/50 scale-102 font-extrabold'
-                          : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'
+                      type="button"
+                      onClick={() => setHighlightZeroScores(!highlightZeroScores)}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        highlightZeroScores 
+                          ? 'bg-red-600 text-white shadow-sm ring-1 ring-red-300' 
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                       }`}
+                      title="เปิด/ปิดการเน้นสีแดงสำหรับคะแนน 0 หรือยังไม่ได้กรอก"
                     >
-                      นักเรียนทั้งหมด ({students.length})
+                      <span className={`w-2 h-2 rounded-full ${highlightZeroScores ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
+                      ไฮไลท์คะแนน 0 (สีแดง)
                     </button>
-                    <button
-                      onClick={() => setStudentFilter('normal')}
-                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all duration-205 ${
-                        studentFilter === 'normal'
-                          ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/50 scale-102 font-extrabold'
-                          : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'
-                      }`}
-                    >
-                      ปกติ ({students.filter(s => !s.isDroppedOut).length})
-                    </button>
-                    <button
-                      onClick={() => setStudentFilter('dropped')}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black transition-all duration-205 ${
-                        studentFilter === 'dropped'
-                          ? 'bg-rose-600 text-white shadow-md shadow-rose-100 scale-102 font-extrabold'
-                          : 'text-rose-600 hover:text-rose-700 hover:bg-rose-50/50'
-                      }`}
-                    >
-                      <UserX className="w-3.5 h-3.5" />
-                      จำหน่ายออก ({students.filter(s => s.isDroppedOut).length})
-                    </button>
-                  </div>
-                </div>
 
-                {/* Main Table */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-4">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[1000px]">
-                      <thead>
-                        <tr className="bg-slate-50/50 border-b border-slate-200">
-                          <th className="p-4 font-semibold text-slate-600 text-sm w-16">เลขที่</th>
-                          <th className="p-4 font-semibold text-slate-600 text-sm w-32">รหัสประจำตัว</th>
-                          <th className="p-4 font-semibold text-slate-600 text-sm">ชื่อ-นามสกุล</th>
-                          <th className="p-4 font-semibold text-slate-600 text-sm text-center">พฤติกรรม (10)</th>
-                          <th className="p-4 font-semibold text-slate-600 text-sm text-center">เข้าเรียน (10)</th>
-                          <th className="p-4 font-semibold text-slate-600 text-sm text-center">งาน 1-3 (45)</th>
-                          <th className="p-4 font-semibold text-slate-600 text-sm text-center">กลางภาค (15)</th>
-                          <th className="p-4 font-semibold text-slate-600 text-sm text-center">ปลายภาค (20)</th>
-                          <th className="p-4 font-semibold text-indigo-600 text-sm text-center">รวม (100)</th>
-                          <th className="p-4 font-semibold text-indigo-600 text-sm text-center">เกรด</th>
-                          <th className="p-4 w-16"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        <AnimatePresence initial={false}>
-                          {filteredStudents.map((student, sIdx) => {
-                            const total = calculateTotal(student, currentSubject);
-                            const grade = getGrade(total);
-                            const isExp = isExpanded[student.id];
-                            const isDropped = Boolean(student.isDroppedOut);
-
-                            const handleDisabledAlert = () => {
-                              showAlert(
-                                'นักเรียนจำหน่ายออก/พ้นสภาพ',
-                                `นักเรียน ${student.name} (รหัส ${student.studentId || '-'}) มีสถานะ "จำหน่ายออก/พ้นสภาพ" ไม่สามารถบันทึกหรือแก้ไขคะแนนได้`,
-                                'warning'
-                              );
-                            };
-
-                            const assignConfigs = getSubjectAssignmentConfig(currentSubject);
-                            const getSumForAssign = (key: 'assignment1' | 'assignment2' | 'assignment3') => {
-                              const sc = student[key] || { part1: 0, part2: 0, part3: 0 };
-                              const cnt = assignConfigs[key].partCount;
-                              if (cnt === 1) return sc.part1 || 0;
-                              if (cnt === 2) return (sc.part1 || 0) + (sc.part2 || 0);
-                              return (sc.part1 || 0) + (sc.part2 || 0) + (sc.part3 || 0);
-                            };
-                            const totalAssignSum = getSumForAssign('assignment1') + getSumForAssign('assignment2') + getSumForAssign('assignment3');
-
-                            return (
-                              <React.Fragment key={student.id}>
-                                <motion.tr 
-                                  initial={{ opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  exit={{ opacity: 0 }}
-                                  className={`transition-colors group ${
-                                    isDropped 
-                                      ? 'bg-rose-50/70 hover:bg-rose-100/50 border-l-4 border-l-rose-500' 
-                                      : 'hover:bg-slate-50/30'
-                                  }`}
-                                >
-                                  <td className="p-2">
-                                    <EditableCell 
-                                      initialValue={student.no}
-                                      data-row={sIdx}
-                                      data-col={0}
-                                      disabled={isDropped}
-                                      onDisabledClick={handleDisabledAlert}
-                                      onCommit={(val) => updateStudent(student.id, 'no', val)}
-                                      className="w-12 mx-auto bg-transparent border border-transparent hover:border-slate-200 focus:bg-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg py-1 text-center outline-none transition-all duration-200 text-slate-600 font-bold"
-                                    />
-                                  </td>
-                                  <td className="p-2">
-                                    <EditableCell 
-                                      initialValue={student.studentId}
-                                      data-row={sIdx}
-                                      data-col={1}
-                                      disabled={isDropped}
-                                      onDisabledClick={handleDisabledAlert}
-                                      onCommit={(val) => updateStudent(student.id, 'studentId', val)}
-                                      placeholder="รหัส..."
-                                      className="w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-slate-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-2 py-1 outline-none transition-all duration-200 text-slate-600 font-mono font-medium text-sm"
-                                    />
-                                  </td>
-                                  <td className="p-2">
-                                    <div className="flex items-center gap-2 group/name-container">
-                                      <EditableCell 
-                                        initialValue={student.name}
-                                        data-row={sIdx}
-                                        data-col={2}
-                                        disabled={isDropped}
-                                        onDisabledClick={handleDisabledAlert}
-                                        onCommit={(val) => updateStudent(student.id, 'name', val)}
-                                        placeholder="ชื่อ-นามสกุล..."
-                                        className={`w-full bg-transparent border border-transparent hover:border-slate-200 focus:bg-indigo-50/40 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-150 rounded-lg px-3 py-1.5 outline-none transition-all duration-200 font-bold ${
-                                          isDropped ? 'text-rose-700 line-through' : 'text-slate-800'
-                                        }`}
-                                      />
-                                      <button
-                                        onClick={() => updateStudent(student.id, 'isDroppedOut', !student.isDroppedOut)}
-                                        className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold transition-all border ${
-                                          isDropped
-                                            ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                                            : 'bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 border-slate-200 hover:border-rose-200 opacity-0 group-hover/name-container:opacity-100 focus:opacity-100'
-                                        }`}
-                                        title={isDropped ? "คลิกเพื่อยกเลิกสถานะจำหน่ายออก" : "คลิกเพื่อทำเครื่องหมายเป็นนักเรียนจำหน่ายออก (พ้นสภาพ)"}
-                                      >
-                                        <UserX className="w-3 h-3" />
-                                        <span>{isDropped ? 'จำหน่ายออก' : 'ปกติ'}</span>
-                                      </button>
-                                    </div>
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    <EditableNumberCell 
-                                      initialValue={student.behavior}
-                                      data-row={sIdx}
-                                      data-col={3}
-                                      disabled={isDropped}
-                                      onDisabledClick={handleDisabledAlert}
-                                      onCommit={(val) => updateStudent(student.id, 'behavior', val)}
-                                      max={10}
-                                      className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
-                                    />
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    <EditableNumberCell 
-                                      initialValue={student.attendance}
-                                      data-row={sIdx}
-                                      data-col={4}
-                                      disabled={isDropped}
-                                      onDisabledClick={handleDisabledAlert}
-                                      onCommit={(val) => updateStudent(student.id, 'attendance', val)}
-                                      max={10}
-                                      className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
-                                    />
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    <button 
-                                      onClick={() => {
-                                        if (isDropped) {
-                                          handleDisabledAlert();
-                                        } else {
-                                          toggleExpand(student.id);
-                                        }
-                                      }}
-                                      className={`flex items-center justify-center gap-1.5 mx-auto border px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
-                                        isDropped
-                                          ? 'bg-rose-100/50 text-rose-600 border-rose-200 cursor-not-allowed'
-                                          : 'bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 border-indigo-100'
-                                      }`}
-                                    >
-                                      <span className="font-mono">{isDropped ? '-' : totalAssignSum}</span>
-                                      {!isDropped && (isExp ? <ChevronDown className="w-3.5 h-3.5 text-indigo-500" /> : <ChevronRight className="w-3.5 h-3.5 text-indigo-500" />)}
-                                    </button>
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    <EditableNumberCell 
-                                      initialValue={student.midterm}
-                                      data-row={sIdx}
-                                      data-col={5}
-                                      disabled={isDropped}
-                                      onDisabledClick={handleDisabledAlert}
-                                      onCommit={(val) => updateStudent(student.id, 'midterm', val)}
-                                      max={15}
-                                      className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
-                                    />
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    <EditableNumberCell 
-                                      initialValue={student.final}
-                                      data-row={sIdx}
-                                      data-col={6}
-                                      disabled={isDropped}
-                                      onDisabledClick={handleDisabledAlert}
-                                      onCommit={(val) => updateStudent(student.id, 'final', val)}
-                                      max={20}
-                                      className="w-14 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 rounded-lg py-1 text-center font-bold text-slate-700 outline-none transition-all duration-150"
-                                    />
-                                  </td>
-                                  <td className="p-2 text-center font-black text-base font-mono">
-                                    {isDropped ? (
-                                      <span className="text-rose-600 text-xs font-bold font-sans">-</span>
-                                    ) : (
-                                      <span className="text-indigo-650">{total}</span>
-                                    )}
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    {isDropped ? (
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-700 border border-rose-300">
-                                        จำหน่ายออก
-                                      </span>
-                                    ) : (
-                                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black shadow-xs ${
-                                        Number(grade) >= 3 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50' : 
-                                        Number(grade) >= 1 ? 'bg-amber-50 text-amber-700 border border-amber-200/50' : 
-                                        'bg-rose-50 text-rose-700 border border-rose-250'
-                                      }`}>
-                                        <span className={`w-1.5 h-1.5 rounded-full ${
-                                          Number(grade) >= 3 ? 'bg-emerald-500' : 
-                                          Number(grade) >= 1 ? 'bg-amber-550' : 
-                                          'bg-rose-500'
-                                        }`} />
-                                        เกรด {grade}
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    <button 
-                                      onClick={() => removeStudent(student.id)}
-                                      className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </td>
-                                </motion.tr>
-                                
-                                {/* Expanded Sub-scores */}
-                                <AnimatePresence>
-                                  {isExp && (
-                                    <motion.tr
-                                      initial={{ height: 0, opacity: 0 }}
-                                      animate={{ height: 'auto', opacity: 1 }}
-                                      exit={{ height: 0, opacity: 0 }}
-                                      className="bg-indigo-50/20 overflow-hidden"
-                                    >
-                                      <td colSpan={11} className="p-6">
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                          {[1, 2, 3].map((num) => {
-                                            const key = `assignment${num}` as 'assignment1' | 'assignment2' | 'assignment3';
-                                            const score = student[key] || { part1: 0, part2: 0, part3: 0 };
-                                            const assignConfigs = getSubjectAssignmentConfig(currentSubject);
-                                            const conf = assignConfigs[key];
-                                            const partCount = conf.partCount;
-                                            
-                                            const activeParts = (['part1', 'part2', 'part3'] as (keyof SubScores)[]).slice(0, partCount);
-                                            const sum = activeParts.reduce((acc, p) => acc + (score[p] || 0), 0);
-                                            
-                                            return (
-                                              <div key={key} className="space-y-3 bg-white p-4.5 rounded-2xl border border-indigo-100/90 shadow-sm relative">
-                                                <div className="flex flex-wrap justify-between items-center border-b border-indigo-50/80 pb-2.5 gap-2">
-                                                  <div className="flex items-center gap-2">
-                                                    <h4 className="font-extrabold text-indigo-700 text-sm">งานที่ {num}</h4>
-                                                    
-                                                    {/* Quick 1-3 Exercise Segmented Selector */}
-                                                    <div className="flex items-center bg-slate-100/90 p-0.5 rounded-lg border border-slate-200/60" title="เลือกจำนวนแบบฝึกหัดต่องานนี้ (สูงสุด 3 แบบ รวม 15 คะแนน)">
-                                                      {[1, 2, 3].map(cnt => (
-                                                        <button
-                                                          key={cnt}
-                                                          type="button"
-                                                          onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            if (currentSubject) {
-                                                              updateSubjectAssignmentConfig(currentSubject.id, key, cnt);
-                                                            }
-                                                          }}
-                                                          className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
-                                                            partCount === cnt 
-                                                              ? 'bg-indigo-600 text-white shadow-xs' 
-                                                              : 'text-slate-500 hover:text-slate-800'
-                                                          }`}
-                                                        >
-                                                          {cnt} แบบ
-                                                        </button>
-                                                      ))}
-                                                    </div>
-                                                  </div>
-
-                                                  <div className="flex items-center gap-2">
-                                                    <button
-                                                      type="button"
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setSelectedAssignmentForCustomConfig({ taskNum: num, taskKey: key });
-                                                        setCustomConfigPartCount(conf.partCount);
-                                                        setCustomConfigMaxScores(conf.maxScores);
-                                                        setCustomConfigPartTitles(conf.partTitles);
-                                                        setIsAssignmentConfigModalOpen(true);
-                                                      }}
-                                                      className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                                                      title="ตั้งค่าคะแนนเต็มและชื่อแบบฝึกหัด"
-                                                    >
-                                                      <Settings className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <span className="text-xs font-black text-indigo-700 bg-indigo-50/90 border border-indigo-100/80 px-2 py-0.5 rounded-lg font-mono">
-                                                      {sum} / 15
-                                                    </span>
-                                                  </div>
-                                                </div>
-
-                                                {/* Dynamic Exercise Grid (1, 2, or 3 columns) */}
-                                                <div className={`grid gap-2.5 ${
-                                                  partCount === 1 ? 'grid-cols-1' : partCount === 2 ? 'grid-cols-2' : 'grid-cols-3'
-                                                }`}>
-                                                  {activeParts.map((part, idx) => {
-                                                    const maxPartScore = conf.maxScores[idx] ?? (partCount === 1 ? 15 : partCount === 2 ? 7.5 : 5);
-                                                    const partTitle = conf.partTitles[idx] || `แบบฝึกหัดที่ ${idx + 1}`;
-                                                    
-                                                    return (
-                                                      <div key={part} className="space-y-1 bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
-                                                        <div className="flex items-center justify-between gap-1">
-                                                          <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold truncate" title={partTitle}>
-                                                            {partTitle}
-                                                          </label>
-                                                          <span className="text-[9px] font-bold text-slate-400 font-mono shrink-0">
-                                                            /{maxPartScore}
-                                                          </span>
-                                                        </div>
-                                                        <EditableNumberCell 
-                                                          initialValue={score[part] || 0}
-                                                          onCommit={(val) => updateStudent(student.id, `${key}.${part}`, val)}
-                                                          max={maxPartScore}
-                                                          className="w-full bg-white border border-slate-200 hover:border-slate-350 focus:bg-white focus:ring-2 focus:ring-indigo-500 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-800 outline-none"
-                                                        />
-                                                      </div>
-                                                    );
-                                                  })}
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-
-                                        {/* Digital Assignments Section */}
-                                        <div className="mt-8 pt-6 border-t border-slate-100">
-                                          <div className="flex items-center justify-between mb-4">
-                                            <h4 className="text-sm font-bold text-slate-500 flex items-center gap-2">
-                                              <Monitor className="w-4 h-4 text-indigo-500" />
-                                              งานที่มอบหมายระบบออนไลน์
-                                            </h4>
-                                          </div>
-                                          
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                                            {(appData.assignments || []).filter(a => a.courseKey === currentCourseKey).map(assignment => {
-                                              const submission = (appData.submissions || []).find(s => s.assignmentId === assignment.id && (s.studentId || '').trim().toLowerCase() === (student.studentId || '').trim().toLowerCase());
-                                              return (
-                                                <div key={assignment.id} className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 hover:border-indigo-100 transition-all">
-                                                  <div className="flex flex-col h-full justify-between gap-3">
-                                                    <div>
-                                                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1 truncate">{assignment.title}</p>
-                                                      <div className="flex items-baseline gap-1">
-                                                        <span className="text-xl font-black text-slate-700">
-                                                          {submission?.status === 'graded' ? submission.score : 0}
-                                                        </span>
-                                                        <span className="text-xs text-slate-400">/ {assignment.maxScore}</span>
-                                                      </div>
-                                                    </div>
-                                                    
-                                                    {!submission ? (
-                                                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1 w-fit">
-                                                        <Clock className="w-2.5 h-2.5" /> ยังไม่ส่ง
-                                                      </span>
-                                                    ) : submission.status === 'pending' ? (
-                                                      <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded flex items-center gap-1 w-fit">
-                                                        <AlertCircle className="w-2.5 h-2.5" /> รอตรวจ
-                                                      </span>
-                                                    ) : (
-                                                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded flex items-center gap-1 w-fit">
-                                                        <CheckCircle2 className="w-2.5 h-2.5" /> ตรวจแล้ว
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              );
-                                            })}
-                                            {(appData.assignments || []).filter(a => a.courseKey === currentCourseKey).length === 0 && (
-                                              <p className="text-xs text-slate-400 col-span-full">ทำรายการมอบหมายงานออนไลน์ที่แถบเมนู "จัดการงานมอบหมาย"</p>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </td>
-                                    </motion.tr>
-                                  )}
-                                </AnimatePresence>
-                              </React.Fragment>
-                            );
-                          })}
-                        </AnimatePresence>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {students.length === 0 && (
-                    <div className="p-12 text-center space-y-4">
-                      <div className="mx-auto w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
-                        <Users className="w-8 h-8" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-slate-900 font-medium">ยังไม่มีข้อมูลนักเรียน</p>
-                        <p className="text-slate-500 text-sm">คลิกปุ่ม "เพิ่มนักเรียน" เพื่อเริ่มบันทึกคะแนน</p>
-                      </div>
-                      <button 
-                        onClick={addStudent}
-                        className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors"
+                    <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 overflow-x-auto">
+                      <button
+                        onClick={() => setStudentFilter('all')}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all duration-200 cursor-pointer ${
+                          studentFilter === 'all'
+                            ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/50 scale-102 font-extrabold'
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'
+                        }`}
                       >
-                        <Plus className="w-5 h-5" />
-                        เพิ่มนักเรียนคนแรก
+                        ทั้งหมด ({students.length})
+                      </button>
+                      <button
+                        onClick={() => setStudentFilter('normal')}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all duration-200 cursor-pointer ${
+                          studentFilter === 'normal'
+                            ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/50 scale-102 font-extrabold'
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'
+                        }`}
+                      >
+                        ปกติ ({students.filter(s => !s.isDroppedOut).length})
+                      </button>
+                      <button
+                        onClick={() => setStudentFilter('dropped')}
+                        className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all duration-200 cursor-pointer ${
+                          studentFilter === 'dropped'
+                            ? 'bg-rose-600 text-white shadow-md shadow-rose-100 scale-102 font-extrabold'
+                            : 'text-rose-600 hover:text-rose-700 hover:bg-rose-50/50'
+                        }`}
+                      >
+                        <UserX className="w-3.5 h-3.5" />
+                        จำหน่ายออก ({students.filter(s => s.isDroppedOut).length})
                       </button>
                     </div>
-                  )}
+                  </div>
                 </div>
+
+                {/* High-speed Grid Table */}
+                {(() => {
+                  const assignConfigs = getSubjectAssignmentConfig(currentSubject);
+                  const conf1 = assignConfigs.assignment1;
+                  const conf2 = assignConfigs.assignment2;
+                  const conf3 = assignConfigs.assignment3;
+
+                  return (
+                    <div className="bg-white rounded-2xl border-2 border-slate-300 shadow-md overflow-hidden mt-4">
+                      <div className="overflow-x-auto max-h-[750px] relative">
+                        <table className="w-full text-left border-collapse min-w-[1280px]">
+                          <thead className="sticky top-0 z-30 shadow-xs">
+                            {/* Header Row 1 */}
+                            <tr className="bg-slate-200 border-b border-slate-300 text-slate-700">
+                              <th rowSpan={2} className="p-2 font-black text-slate-700 text-xs text-center w-12 border-r border-slate-300 sticky left-0 bg-slate-200 z-35 shadow-[1px_0_0_0_#cbd5e1]">เลขที่</th>
+                              <th rowSpan={2} className="p-2 font-black text-slate-700 text-xs text-center w-28 border-r border-slate-300 sticky left-12 bg-slate-200 z-35 shadow-[1px_0_0_0_#cbd5e1]">รหัสประจำตัว</th>
+                              <th rowSpan={2} className="p-2 font-black text-slate-700 text-xs text-left min-w-[170px] border-r border-slate-300 sticky left-40 bg-slate-200 z-35 shadow-[2px_0_0_0_#cbd5e1]">ชื่อ-นามสกุล</th>
+                              <th rowSpan={2} className="w-12 text-center p-1 border-r border-slate-300 align-bottom pb-2 bg-slate-100">
+                                <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-xs font-black text-slate-700 tracking-wider">
+                                  พฤติกรรม
+                                </span>
+                              </th>
+                              <th rowSpan={2} className="w-12 text-center p-1 border-r border-slate-300 align-bottom pb-2 bg-slate-100">
+                                <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-xs font-black text-slate-700 tracking-wider">
+                                  การมาเรียน
+                                </span>
+                              </th>
+
+                              {/* Task 1 */}
+                              <th colSpan={conf1.partCount + 1} className="text-center font-black text-xs py-2 bg-indigo-50/90 border-r border-b border-slate-300 text-indigo-950">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <span className="text-sm font-extrabold">งานที่ 1</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedAssignmentForCustomConfig({ taskNum: 1, taskKey: 'assignment1' });
+                                      setCustomConfigPartCount(conf1.partCount);
+                                      setCustomConfigMaxScores(conf1.maxScores);
+                                      setCustomConfigPartTitles(conf1.partTitles);
+                                      setIsAssignmentConfigModalOpen(true);
+                                    }}
+                                    className="p-1 hover:bg-indigo-100 rounded transition-colors text-indigo-600 cursor-pointer"
+                                    title="ตั้งค่าแบบฝึกหัดงานที่ 1"
+                                  >
+                                    <Settings className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </th>
+
+                              {/* Task 2 */}
+                              <th colSpan={conf2.partCount + 1} className="text-center font-black text-xs py-2 bg-blue-50/90 border-r border-b border-slate-300 text-blue-950">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <span className="text-sm font-extrabold">งานที่ 2</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedAssignmentForCustomConfig({ taskNum: 2, taskKey: 'assignment2' });
+                                      setCustomConfigPartCount(conf2.partCount);
+                                      setCustomConfigMaxScores(conf2.maxScores);
+                                      setCustomConfigPartTitles(conf2.partTitles);
+                                      setIsAssignmentConfigModalOpen(true);
+                                    }}
+                                    className="p-1 hover:bg-blue-100 rounded transition-colors text-blue-600 cursor-pointer"
+                                    title="ตั้งค่าแบบฝึกหัดงานที่ 2"
+                                  >
+                                    <Settings className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </th>
+
+                              {/* Task 3 */}
+                              <th colSpan={conf3.partCount + 1} className="text-center font-black text-xs py-2 bg-indigo-50/90 border-r border-b border-slate-300 text-indigo-950">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <span className="text-sm font-extrabold">งานที่ 3</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedAssignmentForCustomConfig({ taskNum: 3, taskKey: 'assignment3' });
+                                      setCustomConfigPartCount(conf3.partCount);
+                                      setCustomConfigMaxScores(conf3.maxScores);
+                                      setCustomConfigPartTitles(conf3.partTitles);
+                                      setIsAssignmentConfigModalOpen(true);
+                                    }}
+                                    className="p-1 hover:bg-indigo-100 rounded transition-colors text-indigo-600 cursor-pointer"
+                                    title="ตั้งค่าแบบฝึกหัดงานที่ 3"
+                                  >
+                                    <Settings className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </th>
+
+                              <th rowSpan={2} className="w-14 text-center p-1 border-r border-slate-300 align-bottom pb-2 bg-slate-100">
+                                <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-xs font-black text-slate-700">
+                                  กลางภาค
+                                </span>
+                              </th>
+                              <th rowSpan={2} className="w-14 text-center p-1 border-r border-slate-300 align-bottom pb-2 bg-slate-100">
+                                <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-xs font-black text-slate-700">
+                                  ปลายภาค
+                                </span>
+                              </th>
+                              <th rowSpan={2} className="w-16 text-center p-1 border-r border-slate-300 align-bottom pb-2 bg-indigo-100/70">
+                                <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-xs font-black text-indigo-900">
+                                  รวม 100
+                                </span>
+                              </th>
+                              <th rowSpan={2} className="w-20 text-center p-2 text-xs font-black text-indigo-900 border-r border-slate-300 bg-slate-100">
+                                เกรด
+                              </th>
+                              <th rowSpan={2} className="w-12 text-center p-2 bg-slate-100"></th>
+                            </tr>
+
+                            {/* Header Row 2: Exercise Columns */}
+                            <tr className="bg-slate-100 border-b border-slate-300 text-slate-700 text-[11px]">
+                              {/* Task 1 Parts */}
+                              {Array.from({ length: conf1.partCount }).map((_, idx) => (
+                                <th key={`t1-part-${idx}`} className="w-12 text-center p-1 border-r border-slate-300 bg-white align-bottom pb-2">
+                                  <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-[11px] font-bold text-slate-700 whitespace-nowrap">
+                                    {conf1.partTitles[idx] || `แบบฝึกหัดที่ ${idx + 1}`}
+                                  </span>
+                                </th>
+                              ))}
+                              <th className="w-12 text-center p-1 border-r border-slate-300 bg-indigo-100/60 align-bottom pb-2">
+                                <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-[11px] font-black text-indigo-900 whitespace-nowrap">
+                                  รวม 15 คะแนน
+                                </span>
+                              </th>
+
+                              {/* Task 2 Parts */}
+                              {Array.from({ length: conf2.partCount }).map((_, idx) => (
+                                <th key={`t2-part-${idx}`} className="w-12 text-center p-1 border-r border-slate-300 bg-white align-bottom pb-2">
+                                  <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-[11px] font-bold text-slate-700 whitespace-nowrap">
+                                    {conf2.partTitles[idx] || `แบบฝึกหัดที่ ${conf1.partCount + idx + 1}`}
+                                  </span>
+                                </th>
+                              ))}
+                              <th className="w-12 text-center p-1 border-r border-slate-300 bg-blue-100/60 align-bottom pb-2">
+                                <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-[11px] font-black text-blue-900 whitespace-nowrap">
+                                  รวม 15 คะแนน
+                                </span>
+                              </th>
+
+                              {/* Task 3 Parts */}
+                              {Array.from({ length: conf3.partCount }).map((_, idx) => (
+                                <th key={`t3-part-${idx}`} className="w-12 text-center p-1 border-r border-slate-300 bg-white align-bottom pb-2">
+                                  <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-[11px] font-bold text-slate-700 whitespace-nowrap">
+                                    {conf3.partTitles[idx] || `แบบฝึกหัดที่ ${conf1.partCount + conf2.partCount + idx + 1}`}
+                                  </span>
+                                </th>
+                              ))}
+                              <th className="w-12 text-center p-1 border-r border-slate-300 bg-indigo-100/60 align-bottom pb-2">
+                                <span className="[writing-mode:vertical-rl] rotate-180 inline-block py-2 text-[11px] font-black text-indigo-900 whitespace-nowrap">
+                                  รวม 15 คะแนน
+                                </span>
+                              </th>
+                            </tr>
+
+                            {/* Header Row 3: คะแนนเต็ม (Max Score row) */}
+                            <tr className="bg-slate-200 border-b-2 border-slate-400 font-mono text-xs font-black text-slate-800">
+                              <td colSpan={3} className="px-3 py-1 text-right font-sans font-black text-xs text-slate-700 sticky left-0 bg-slate-200 border-r border-slate-300 z-35 shadow-[2px_0_0_0_#cbd5e1]">
+                                คะแนนเต็ม
+                              </td>
+                              <td className="text-center py-1 border-r border-slate-300 font-bold bg-slate-100">10</td>
+                              <td className="text-center py-1 border-r border-slate-300 font-bold bg-slate-100">10</td>
+
+                              {/* Task 1 Max */}
+                              {Array.from({ length: conf1.partCount }).map((_, idx) => (
+                                <td key={`max-t1-${idx}`} className="text-center py-1 border-r border-slate-300 font-bold text-indigo-950 bg-indigo-50/40">
+                                  {conf1.maxScores[idx]}
+                                </td>
+                              ))}
+                              <td className="text-center py-1 border-r border-slate-300 font-black bg-indigo-200/70 text-indigo-950">15</td>
+
+                              {/* Task 2 Max */}
+                              {Array.from({ length: conf2.partCount }).map((_, idx) => (
+                                <td key={`max-t2-${idx}`} className="text-center py-1 border-r border-slate-300 font-bold text-blue-950 bg-blue-50/40">
+                                  {conf2.maxScores[idx]}
+                                </td>
+                              ))}
+                              <td className="text-center py-1 border-r border-slate-300 font-black bg-blue-200/70 text-blue-950">15</td>
+
+                              {/* Task 3 Max */}
+                              {Array.from({ length: conf3.partCount }).map((_, idx) => (
+                                <td key={`max-t3-${idx}`} className="text-center py-1 border-r border-slate-300 font-bold text-indigo-950 bg-indigo-50/40">
+                                  {conf3.maxScores[idx]}
+                                </td>
+                              ))}
+                              <td className="text-center py-1 border-r border-slate-300 font-black bg-indigo-200/70 text-indigo-950">15</td>
+
+                              <td className="text-center py-1 border-r border-slate-300 font-bold bg-slate-100">15</td>
+                              <td className="text-center py-1 border-r border-slate-300 font-bold bg-slate-100">20</td>
+                              <td className="text-center py-1 border-r border-slate-300 font-black text-indigo-900 bg-indigo-200/60">100</td>
+                              <td className="text-center py-1 border-r border-slate-300 text-slate-400 font-bold bg-slate-100">-</td>
+                              <td className="p-1 bg-slate-100"></td>
+                            </tr>
+                          </thead>
+
+                          <tbody className="divide-y divide-slate-200 font-mono text-xs">
+                            <AnimatePresence initial={false}>
+                              {filteredStudents.map((student, sIdx) => {
+                                const total = calculateTotal(student, currentSubject);
+                                const grade = getGrade(total);
+                                const isDropped = Boolean(student.isDroppedOut);
+
+                                const handleDisabledAlert = () => {
+                                  showAlert(
+                                    'นักเรียนจำหน่ายออก/พ้นสภาพ',
+                                    `นักเรียน ${student.name} (รหัส ${student.studentId || '-'}) มีสถานะ "จำหน่ายออก/พ้นสภาพ" ไม่สามารถบันทึกหรือแก้ไขคะแนนได้`,
+                                    'warning'
+                                  );
+                                };
+
+                                // Calculate sums for Tasks 1, 2, 3
+                                const s1 = student.assignment1 || {};
+                                const task1Sum = Array.from({ length: conf1.partCount }).reduce<number>((sum, _, i) => sum + (Number(s1[`part${i + 1}` as keyof SubScores]) || 0), 0);
+                                const s2 = student.assignment2 || {};
+                                const task2Sum = Array.from({ length: conf2.partCount }).reduce<number>((sum, _, i) => sum + (Number(s2[`part${i + 1}` as keyof SubScores]) || 0), 0);
+                                const s3 = student.assignment3 || {};
+                                const task3Sum = Array.from({ length: conf3.partCount }).reduce<number>((sum, _, i) => sum + (Number(s3[`part${i + 1}` as keyof SubScores]) || 0), 0);
+
+                                const isZero1 = !isDropped && task1Sum === 0;
+                                const isZero2 = !isDropped && task2Sum === 0;
+                                const isZero3 = !isDropped && task3Sum === 0;
+                                const isZeroTotal = !isDropped && total === 0;
+
+                                let colIdx = 0;
+
+                                return (
+                                  <motion.tr 
+                                    key={student.id}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className={`transition-colors hover:bg-amber-50/40 group ${
+                                      isDropped 
+                                        ? 'bg-rose-50/70 hover:bg-rose-100/50' 
+                                        : sIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                                    }`}
+                                  >
+                                    {/* เลขที่ */}
+                                    <td className="p-0 border-r border-b border-slate-300 sticky left-0 bg-white z-10 shadow-[1px_0_0_0_#cbd5e1]">
+                                      <EditableCell 
+                                        initialValue={student.no}
+                                        data-row={sIdx}
+                                        data-col={colIdx++}
+                                        disabled={isDropped}
+                                        onDisabledClick={handleDisabledAlert}
+                                        onCommit={(val) => updateStudent(student.id, 'no', val)}
+                                        className="w-12 h-9 mx-auto bg-transparent border-0 focus:bg-indigo-50 focus:ring-2 focus:ring-indigo-500 text-center font-bold text-slate-700 outline-none"
+                                      />
+                                    </td>
+
+                                    {/* รหัสประจำตัว */}
+                                    <td className="p-0 border-r border-b border-slate-300 sticky left-12 bg-white z-10 shadow-[1px_0_0_0_#cbd5e1]">
+                                      <EditableCell 
+                                        initialValue={student.studentId}
+                                        data-row={sIdx}
+                                        data-col={colIdx++}
+                                        disabled={isDropped}
+                                        onDisabledClick={handleDisabledAlert}
+                                        onCommit={(val) => updateStudent(student.id, 'studentId', val)}
+                                        placeholder="รหัส..."
+                                        className="w-28 h-9 px-2 bg-transparent border-0 focus:bg-indigo-50 focus:ring-2 focus:ring-indigo-500 text-center text-xs font-mono font-medium text-slate-700 outline-none"
+                                      />
+                                    </td>
+
+                                    {/* ชื่อ-นามสกุล */}
+                                    <td className="p-0 border-r border-b border-slate-300 sticky left-40 bg-white z-10 shadow-[2px_0_0_0_#cbd5e1]">
+                                      <div className="flex items-center justify-between px-1">
+                                        <EditableCell 
+                                          initialValue={student.name}
+                                          data-row={sIdx}
+                                          data-col={colIdx++}
+                                          disabled={isDropped}
+                                          onDisabledClick={handleDisabledAlert}
+                                          onCommit={(val) => updateStudent(student.id, 'name', val)}
+                                          placeholder="ชื่อ-นามสกุล..."
+                                          className={`w-full h-9 px-2 bg-transparent border-0 focus:bg-indigo-50 focus:ring-2 focus:ring-indigo-500 font-sans font-bold text-xs truncate outline-none ${
+                                            isDropped ? 'text-rose-700 line-through' : 'text-slate-800'
+                                          }`}
+                                        />
+                                        <button
+                                          onClick={() => updateStudent(student.id, 'isDroppedOut', !student.isDroppedOut)}
+                                          className={`shrink-0 flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold transition-all border cursor-pointer ${
+                                            isDropped
+                                              ? 'bg-rose-600 text-white border-rose-600'
+                                              : 'bg-slate-50 hover:bg-rose-50 text-slate-300 hover:text-rose-600 border-slate-200 opacity-0 group-hover:opacity-100'
+                                          }`}
+                                          title={isDropped ? "คลิกเพื่อยกเลิกสถานะจำหน่ายออก" : "จำหน่ายออก"}
+                                        >
+                                          {isDropped ? 'จำหน่ายออก' : 'พ้น'}
+                                        </button>
+                                      </div>
+                                    </td>
+
+                                    {/* พฤติกรรม (10) */}
+                                    <td className="p-0 border-r border-b border-slate-300 text-center">
+                                      <EditableNumberCell 
+                                        initialValue={student.behavior}
+                                        data-row={sIdx}
+                                        data-col={colIdx++}
+                                        disabled={isDropped}
+                                        onDisabledClick={handleDisabledAlert}
+                                        onCommit={(val) => updateStudent(student.id, 'behavior', val)}
+                                        max={10}
+                                        highlightZero={highlightZeroScores}
+                                        className="w-full h-9 bg-transparent border-0 focus:ring-2 focus:ring-indigo-500 text-center font-bold text-xs outline-none"
+                                      />
+                                    </td>
+
+                                    {/* การมาเรียน (10) */}
+                                    <td className="p-0 border-r border-b border-slate-300 text-center">
+                                      <EditableNumberCell 
+                                        initialValue={student.attendance}
+                                        data-row={sIdx}
+                                        data-col={colIdx++}
+                                        disabled={isDropped}
+                                        onDisabledClick={handleDisabledAlert}
+                                        onCommit={(val) => updateStudent(student.id, 'attendance', val)}
+                                        max={10}
+                                        highlightZero={highlightZeroScores}
+                                        className="w-full h-9 bg-transparent border-0 focus:ring-2 focus:ring-indigo-500 text-center font-bold text-xs outline-none"
+                                      />
+                                    </td>
+
+                                    {/* Task 1 Exercises */}
+                                    {Array.from({ length: conf1.partCount }).map((_, pIdx) => {
+                                      const partKey = `part${pIdx + 1}` as keyof SubScores;
+                                      const maxScore = conf1.maxScores[pIdx] ?? (15 / conf1.partCount);
+                                      return (
+                                        <td key={`s1-${student.id}-${pIdx}`} className="p-0 border-r border-b border-slate-300 text-center">
+                                          <EditableNumberCell 
+                                            initialValue={s1[partKey] || 0}
+                                            data-row={sIdx}
+                                            data-col={colIdx++}
+                                            disabled={isDropped}
+                                            onDisabledClick={handleDisabledAlert}
+                                            onCommit={(val) => updateStudent(student.id, `assignment1.${partKey}`, val)}
+                                            max={maxScore}
+                                            highlightZero={highlightZeroScores}
+                                            className="w-full h-9 bg-transparent border-0 focus:ring-2 focus:ring-indigo-500 text-center font-bold text-xs outline-none"
+                                          />
+                                        </td>
+                                      );
+                                    })}
+                                    {/* Task 1 Sum */}
+                                    <td className={`p-0 border-r border-b border-slate-300 text-center font-black text-xs select-none ${
+                                      isZero1 && highlightZeroScores 
+                                        ? '!bg-red-600 !text-white font-black' 
+                                        : 'bg-indigo-50/50 text-indigo-950 font-bold'
+                                    }`}>
+                                      {isDropped ? '-' : task1Sum}
+                                    </td>
+
+                                    {/* Task 2 Exercises */}
+                                    {Array.from({ length: conf2.partCount }).map((_, pIdx) => {
+                                      const partKey = `part${pIdx + 1}` as keyof SubScores;
+                                      const maxScore = conf2.maxScores[pIdx] ?? (15 / conf2.partCount);
+                                      return (
+                                        <td key={`s2-${student.id}-${pIdx}`} className="p-0 border-r border-b border-slate-300 text-center">
+                                          <EditableNumberCell 
+                                            initialValue={s2[partKey] || 0}
+                                            data-row={sIdx}
+                                            data-col={colIdx++}
+                                            disabled={isDropped}
+                                            onDisabledClick={handleDisabledAlert}
+                                            onCommit={(val) => updateStudent(student.id, `assignment2.${partKey}`, val)}
+                                            max={maxScore}
+                                            highlightZero={highlightZeroScores}
+                                            className="w-full h-9 bg-transparent border-0 focus:ring-2 focus:ring-indigo-500 text-center font-bold text-xs outline-none"
+                                          />
+                                        </td>
+                                      );
+                                    })}
+                                    {/* Task 2 Sum */}
+                                    <td className={`p-0 border-r border-b border-slate-300 text-center font-black text-xs select-none ${
+                                      isZero2 && highlightZeroScores 
+                                        ? '!bg-red-600 !text-white font-black' 
+                                        : 'bg-blue-50/50 text-blue-950 font-bold'
+                                    }`}>
+                                      {isDropped ? '-' : task2Sum}
+                                    </td>
+
+                                    {/* Task 3 Exercises */}
+                                    {Array.from({ length: conf3.partCount }).map((_, pIdx) => {
+                                      const partKey = `part${pIdx + 1}` as keyof SubScores;
+                                      const maxScore = conf3.maxScores[pIdx] ?? (15 / conf3.partCount);
+                                      return (
+                                        <td key={`s3-${student.id}-${pIdx}`} className="p-0 border-r border-b border-slate-300 text-center">
+                                          <EditableNumberCell 
+                                            initialValue={s3[partKey] || 0}
+                                            data-row={sIdx}
+                                            data-col={colIdx++}
+                                            disabled={isDropped}
+                                            onDisabledClick={handleDisabledAlert}
+                                            onCommit={(val) => updateStudent(student.id, `assignment3.${partKey}`, val)}
+                                            max={maxScore}
+                                            highlightZero={highlightZeroScores}
+                                            className="w-full h-9 bg-transparent border-0 focus:ring-2 focus:ring-indigo-500 text-center font-bold text-xs outline-none"
+                                          />
+                                        </td>
+                                      );
+                                    })}
+                                    {/* Task 3 Sum */}
+                                    <td className={`p-0 border-r border-b border-slate-300 text-center font-black text-xs select-none ${
+                                      isZero3 && highlightZeroScores 
+                                        ? '!bg-red-600 !text-white font-black' 
+                                        : 'bg-indigo-50/50 text-indigo-950 font-bold'
+                                    }`}>
+                                      {isDropped ? '-' : task3Sum}
+                                    </td>
+
+                                    {/* กลางภาค (15) */}
+                                    <td className="p-0 border-r border-b border-slate-300 text-center">
+                                      <EditableNumberCell 
+                                        initialValue={student.midterm}
+                                        data-row={sIdx}
+                                        data-col={colIdx++}
+                                        disabled={isDropped}
+                                        onDisabledClick={handleDisabledAlert}
+                                        onCommit={(val) => updateStudent(student.id, 'midterm', val)}
+                                        max={15}
+                                        highlightZero={highlightZeroScores}
+                                        className="w-full h-9 bg-transparent border-0 focus:ring-2 focus:ring-indigo-500 text-center font-bold text-xs outline-none"
+                                      />
+                                    </td>
+
+                                    {/* ปลายภาค (20) */}
+                                    <td className="p-0 border-r border-b border-slate-300 text-center">
+                                      <EditableNumberCell 
+                                        initialValue={student.final}
+                                        data-row={sIdx}
+                                        data-col={colIdx++}
+                                        disabled={isDropped}
+                                        onDisabledClick={handleDisabledAlert}
+                                        onCommit={(val) => updateStudent(student.id, 'final', val)}
+                                        max={20}
+                                        highlightZero={highlightZeroScores}
+                                        className="w-full h-9 bg-transparent border-0 focus:ring-2 focus:ring-indigo-500 text-center font-bold text-xs outline-none"
+                                      />
+                                    </td>
+
+                                    {/* รวม (100) */}
+                                    <td className={`p-0 border-r border-b border-slate-300 text-center font-black text-xs select-none ${
+                                      isZeroTotal && highlightZeroScores 
+                                        ? '!bg-red-600 !text-white font-black' 
+                                        : 'bg-indigo-50/70 text-indigo-950 font-black'
+                                    }`}>
+                                      {isDropped ? '-' : total}
+                                    </td>
+
+                                    {/* เกรด */}
+                                    <td className="p-1 border-r border-b border-slate-300 text-center font-sans">
+                                      {isDropped ? (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-rose-100 text-rose-700">
+                                          จำหน่ายออก
+                                        </span>
+                                      ) : (
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-black ${
+                                          Number(grade) >= 3 ? 'bg-emerald-100 text-emerald-800' : 
+                                          Number(grade) >= 1 ? 'bg-amber-100 text-amber-800' : 
+                                          'bg-rose-100 text-rose-800'
+                                        }`}>
+                                          {grade}
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Actions */}
+                                    <td className="p-1 border-b border-slate-300 text-center">
+                                      <button 
+                                        onClick={() => removeStudent(student.id)}
+                                        className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                                        title="ลบนักเรียน"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </td>
+                                  </motion.tr>
+                                );
+                              })}
+                            </AnimatePresence>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {students.length === 0 && (
+                        <div className="p-12 text-center space-y-4">
+                          <div className="mx-auto w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
+                            <Users className="w-8 h-8" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-slate-900 font-medium">ยังไม่มีข้อมูลนักเรียน</p>
+                            <p className="text-slate-500 text-sm">คลิกปุ่ม "เพิ่มนักเรียน" เพื่อเริ่มบันทึกคะแนน</p>
+                          </div>
+                          <button 
+                            onClick={addStudent}
+                            className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors"
+                          >
+                            <Plus className="w-5 h-5" />
+                            เพิ่มนักเรียนคนแรก
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             )}
 

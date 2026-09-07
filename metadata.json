@@ -1,5 +1,8 @@
 {
   "name": "Student Tracker Pro",
   "description": "Premium student portal for tracking grades, attendance, and online assignments with unified teacher dashboard.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
